@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self' qrc:; script-src 'self' qrc:; style-src 'self'; img-src 'self' data:;"
+    />
+    <title>WhatInput</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <div>
+        <span class="mark">W</span><strong>WhatInput</strong
+        ><span class="sub">本地输入统计</span>
+      </div>
+      <span id="status">正在连接…</span>
+    </header>
+    <main>
+      <section class="intro">
+        <div>
+          <p class="eyebrow">每一次输入，都有迹可循</p>
+          <h1>你的输入，一目了然。</h1>
+          <p>按软件、设备与时间，了解你的操作习惯。数据仅保存在本机。</p>
+        </div>
+        <div class="total">
+          <span>当前范围总次数</span><strong id="total">—</strong>
+        </div>
+      </section>
+      <section class="filters">
+        <div class="presets">
+          <button data-range="today" class="active">今天</button
+          ><button data-range="yesterday">昨天</button
+          ><button data-range="week">最近 7 天</button
+          ><button data-range="all">全部</button>
+        </div>
+        <div class="fields">
+          <label
+            >起始时间<input id="start" type="datetime-local" step="1" /></label
+          ><label
+            >结束时间（不包含）<input
+              id="end"
+              type="datetime-local"
+              step="1" /></label
+          ><button id="apply">查询</button
+          ><label
+            >软件<select id="app">
+              <option value="">全部软件</option>
+            </select></label
+          ><label
+            >设备类型<select id="type">
+              <option value="">全部类型</option>
+              <option value="keyboard">键盘</option>
+              <option value="mouse">鼠标</option>
+              <option value="gamepad">手柄</option>
+            </select></label
+          >
+        </div>
+      </section>
+      <div class="range">
+        <span id="range"></span><button id="back" hidden>← 返回原时段</button
+        ><span id="updated"></span>
+      </div>
+      <div id="message" role="status" hidden></div>
+      <section class="grid">
+        <article>
+          <div class="title">
+            <h2>活动分布</h2>
+            <span>点击小时查看排行</span>
+          </div>
+          <div id="chart"></div>
+          <div class="title">
+            <h2>软件使用排行</h2>
+            <span>按输入次数</span>
+          </div>
+          <div id="software"></div>
+        </article>
+        <article>
+          <div class="title">
+            <h2>按键排行</h2>
+            <span id="rowcount"></span>
+          </div>
+          <div class="tablewrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>按键</th>
+                  <th>设备类型</th>
+                  <th>次数</th>
+                  <th>占比</th>
+                </tr>
+              </thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+      <footer>
+        <p>
+          按秒聚合 · 不保存输入文本或同秒内按键顺序<br />所有键盘、鼠标、手柄分别合并统计。软件归属按操作上下文判断。
+        </p>
+        <div>
+          <button id="export">导出当前范围 CSV</button
+          ><button id="clear" class="danger">清空全部历史</button>
+        </div>
+      </footer>
+    </main>
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
