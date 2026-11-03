@@ -84,37 +84,10 @@ Database::Database(const std::string &path, bool ro) {
             "CREATE TABLE IF NOT EXISTS batches(id TEXT PRIMARY KEY);");
         sqlite3_stmt* versionQuery{};
         sqlite3_prepare_v2(db_, "PRAGMA user_version", -1, &versionQuery, nullptr);
-        const int version = sqlite3_step(versionQuery)==SQLITE_ROW
-                                ? sqlite3_column_int(versionQuery,0) : -1;
+        int version=sqlite3_step(versionQuery)==SQLITE_ROW?sqlite3_column_int(versionQuery,0):-1;
         sqlite3_finalize(versionQuery);
-        if(version<0 || version>2) throw std::runtime_error("Unsupported database version");
-        if(version<2) {
-            // Preserve an SQLite-consistent copy before dropping physical identities.
-            if(version==1) {
-                const auto backupPath=path+".pre-category-v1.bak";
-                if(!std::filesystem::exists(std::filesystem::path(std::u8string(backupPath.begin(),backupPath.end())))) {
-                    sqlite3* backupDb{};
-                    int backupResult=sqlite3_open(backupPath.c_str(),&backupDb);
-                    if(backupResult==SQLITE_OK) {
-                        auto backup=sqlite3_backup_init(backupDb,"main",db_,"main");
-                        if(backup) { backupResult=sqlite3_backup_step(backup,-1); sqlite3_backup_finish(backup); }
-                        else backupResult=SQLITE_ERROR;
-                    }
-                    if(backupDb)sqlite3_close(backupDb);
-                    if(backupResult!=SQLITE_DONE)throw std::runtime_error("Cannot back up database before category migration");
-                }
-            }
-            try {
-                exec("BEGIN IMMEDIATE;"
-                     "INSERT OR IGNORE INTO devices(identity,type,name) "
-                     "SELECT 'category:'||type,type,CASE type WHEN 'keyboard' THEN '键盘' WHEN 'mouse' THEN '鼠标' WHEN 'gamepad' THEN '手柄' ELSE type END FROM devices;"
-                     "CREATE TEMP TABLE category_counts AS SELECT second_utc,d.type,control_id,app_id,SUM(press_count) AS press_count FROM counts c JOIN devices d ON d.id=c.device_id GROUP BY second_utc,d.type,control_id,app_id;"
-                     "DELETE FROM counts;"
-                     "INSERT INTO counts SELECT second_utc,d.id,control_id,app_id,press_count FROM category_counts m JOIN devices d ON d.identity='category:'||m.type;"
-                     "DELETE FROM devices WHERE identity NOT LIKE 'category:%';"
-                     "DROP TABLE category_counts; PRAGMA user_version=2; COMMIT;");
-            } catch(...) {sqlite3_exec(db_,"ROLLBACK",nullptr,nullptr,nullptr);throw;}
-        }
+        if(version!=0&&version!=3)throw std::runtime_error("Database format changed: close WhatInput and remove the old database before restarting.");
+        exec("PRAGMA user_version=3;");
     } catch (...) {
         sqlite3_close(db_);
         db_ = nullptr;

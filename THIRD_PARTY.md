@@ -10,13 +10,13 @@ SQLite 属于 public domain；声明保留于 `third_party/sqlite3.c` 和 `sqlit
 
 ## Qt 6.8.3
 
-通过 aqtinstall 3.3.0 从 Qt 官方镜像下载安装 MSVC2022 x64 二进制包；运行时动态链接。Qt 模块涉及 LGPL/GPL/商业许可，Qt WebEngine 另含 Chromium 第三方组件。正式分发必须保留对应许可证和第三方通知，满足适用 LGPL 的动态替换、源码获取及其他要求，或使用适当商业许可。
+通过 aqtinstall 3.3.0 从 Qt 官方镜像下载安装 MSVC2022 x64 二进制包；运行时动态链接。当前应用使用 Qt Widgets/Qt Base，运行包也可能包含部署工具选择的 Qt 插件。Qt 模块涉及 LGPL/GPL/商业许可。正式分发必须保留对应许可证和第三方通知，满足适用 LGPL 的动态替换、源码获取及其他要求，或使用适当商业许可。
 
 Qt 源码：https://download.qt.io/archive/qt/6.8/6.8.3/single/
 
 许可证参考：https://doc.qt.io/qt-6.8/licensing.html
 
-WebEngine 第三方说明：https://doc.qt.io/qt-6.8/qtwebengine-licensing.html
+当前版本不再使用或分发 Qt WebEngine/Chromium 组件。
 
 ## Microsoft 运行库
 
