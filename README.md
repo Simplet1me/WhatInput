@@ -4,7 +4,7 @@ Windows 10/11 x64 本地输入统计工具。C++20、Win32 Raw Input/XInput、SQ
 
 ## 使用
 
-发布目录为 `dist/WhatInput/`，启动 `WhatInput.exe` 后在系统托盘常驻，双击托盘打开统计，也可直接启动 `WhatInputStats.exe`。关闭统计窗口不停止采集；停止统计请选择托盘“退出”。菜单可配置当前用户开机自启，无暂停功能。
+发布目录为工作区下的 `release/`，启动 `WhatInput.exe` 后在系统托盘常驻，双击托盘打开统计，也可直接启动 `WhatInputStats.exe`。关闭统计窗口不停止采集；停止统计请选择托盘“退出”。菜单可配置当前用户开机自启，无暂停功能。
 
 - 按秒聚合键盘、鼠标、手柄次数；长按不累计自动重复。
 - 按软件、日期及秒级区间筛选；所有键盘合并、所有鼠标合并、所有手柄合并，不提供单设备筛选。
@@ -27,13 +27,13 @@ $env:QT_ROOT = '你的Qt目录\6.8.3\msvc2022_64'
 cmd /c packaging\build.cmd
 ```
 
-本工作区脚本默认使用已发现的本机工具链及 `.tools/Qt/6.8.3/msvc2022_64`。其他机器需确保 Ninja 在 PATH 中。脚本依次执行配置、Release 编译、CTest、安装及 windeployqt。单独构建采集器和测试可在 CMake 配置时传入 `-DBUILD_STATS=OFF`。
+本工作区脚本默认使用已发现的本机工具链及 `.tools/Qt/6.8.3/msvc2022_64`。其他机器需确保 Ninja 在 PATH 中。脚本依次执行配置、两个程序的 Release 编译、安装及 windeployqt，将 EXE 和所需运行依赖统一放入工作区 `release/`；不编译或运行测试目标。更新时直接覆盖发布文件，保留运行目录中的数据与设置；更新前请退出该目录中的程序。单独构建采集器可在 CMake 配置时传入 `-DBUILD_STATS=OFF`。
 
 SQLite amalgamation 已随源码固定在 `third_party/`，无需在线下载。Qt 依赖下载器仅为开发工具，不是运行依赖。
 
 ## 部署
 
-请分发完整 `dist/WhatInput` 目录，不要只复制 EXE。WebEngine 需要 `QtWebEngineProcess.exe`、`resources/`、`translations/qtwebengine_locales/`、平台插件和 Qt DLL。页面内嵌于 qrc，不依赖当前工作目录和网络。
+请分发完整 `release` 目录，不要只复制 EXE。WebEngine 需要 `QtWebEngineProcess.exe`、`resources/`、`translations/qtwebengine_locales/`、平台插件和 Qt DLL。页面内嵌于 qrc，不依赖当前工作目录和网络。
 
 Qt 6.8 的目标基线为 Windows 10 1809+ / Windows 11 x64；Windows 10 实机兼容性仍需复测。缺少 MSVC 运行库时安装发布目录内匹配的 `vc_redist.x64.exe`。正式分发还需遵守 `THIRD_PARTY.md` 中的许可证说明。
 

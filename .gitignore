@@ -1,5 +1,6 @@
 /.tools/
 /build/
 /dist/
+/release/
 *.log
 __pycache__/
