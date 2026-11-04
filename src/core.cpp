@@ -1,16 +1,19 @@
 #include "core.h"
 #include <chrono>
+#include <filesystem>
 #include <random>
 #include <sstream>
 #include <stdexcept>
-#include <filesystem>
 
 namespace wi {
-std::string categoryId(const std::string& type) { return "category:" + type; }
-std::string categoryName(const std::string& type) {
-    if(type=="keyboard") return "键盘";
-    if(type=="mouse") return "鼠标";
-    if(type=="gamepad") return "手柄";
+std::string categoryId(const std::string &type) { return "category:" + type; }
+std::string categoryName(const std::string &type) {
+    if (type == "keyboard")
+        return "键盘";
+    if (type == "mouse")
+        return "鼠标";
+    if (type == "gamepad")
+        return "手柄";
     return type;
 }
 bool State::edge(const std::string &c, bool p) {
@@ -82,11 +85,17 @@ Database::Database(const std::string &path, bool ro) {
             "CHECK(press_count>0),PRIMARY "
             "KEY(second_utc,device_id,control_id,app_id)) WITHOUT ROWID;"
             "CREATE TABLE IF NOT EXISTS batches(id TEXT PRIMARY KEY);");
-        sqlite3_stmt* versionQuery{};
-        sqlite3_prepare_v2(db_, "PRAGMA user_version", -1, &versionQuery, nullptr);
-        int version=sqlite3_step(versionQuery)==SQLITE_ROW?sqlite3_column_int(versionQuery,0):-1;
+        sqlite3_stmt *versionQuery{};
+        sqlite3_prepare_v2(db_, "PRAGMA user_version", -1, &versionQuery,
+                           nullptr);
+        int version = sqlite3_step(versionQuery) == SQLITE_ROW
+                          ? sqlite3_column_int(versionQuery, 0)
+                          : -1;
         sqlite3_finalize(versionQuery);
-        if(version!=0&&version!=3)throw std::runtime_error("Database format changed: close WhatInput and remove the old database before restarting.");
+        if (version != 0 && version != 3)
+            throw std::runtime_error(
+                "Database format changed: close WhatInput and remove the old "
+                "database before restarting.");
         exec("PRAGMA user_version=3;");
     } catch (...) {
         sqlite3_close(db_);
@@ -121,7 +130,8 @@ void Database::commit(const std::string &batch, const Buffer &entries) {
         b.done();
         if (sqlite3_changes(db_))
             for (auto &[k, e] : entries) {
-                if(e.count==0) continue;
+                if (e.count == 0)
+                    continue;
                 Stmt d(db_, "INSERT INTO devices(identity,type,name,online) "
                             "VALUES(?,?,?,?) ON CONFLICT(identity) DO UPDATE "
                             "SET name=excluded.name,online=CASE WHEN ?5 THEN "

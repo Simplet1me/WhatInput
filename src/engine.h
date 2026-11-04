@@ -13,6 +13,7 @@ namespace wi {
 struct ViewFilter {
     Count start=0, end=INT64_MAX;
     std::string type, app;
+    std::string softwareType;
 };
 struct RankedControl { std::string type, control, name; Count count=0; };
 struct HourCount { Count start=0, end=0, count=0; };
@@ -20,6 +21,7 @@ struct RankedApplication { std::string id, name; Count count=0; };
 struct ViewResult {
     quint64 request=0;
     Count total=0;
+    Count todayMouse=0, todayKeyboard=0, todayGamepad=0;
     std::vector<RankedControl> controls;
     std::vector<HourCount> hours;
     std::vector<RankedApplication> software;

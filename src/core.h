@@ -8,8 +8,8 @@
 #include <vector>
 
 namespace wi {
-std::string categoryId(const std::string& type);
-std::string categoryName(const std::string& type);
+std::string categoryId(const std::string &type);
+std::string categoryName(const std::string &type);
 using Count = std::int64_t;
 struct Key {
     Count second{};
