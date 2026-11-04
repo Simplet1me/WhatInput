@@ -11,7 +11,10 @@ if not defined QT_ROOT set "QT_ROOT=%CD%\.tools\Qt\6.8.3\msvc2022_64"
 set "PATH=F:\Program Files\Microsoft Visual Studio\18\Insiders\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja;%PATH%"
 cmake -S . -B build/release -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="%QT_ROOT%"
 if errorlevel 1 exit /b 1
-cmake --build build/release --target WhatInput --parallel
+rem Rebuild every object: the local MSVC /showIncludes prefix can be decoded
+rem incorrectly by CMake/Ninja, leaving header dependencies empty. Reusing an
+rem old main.cpp object after a window class layout change can crash at startup.
+cmake --build build/release --target WhatInput --clean-first --parallel
 if errorlevel 1 exit /b 1
 powershell -NoProfile -ExecutionPolicy Bypass -File packaging\deploy.ps1 -Prepare
 if errorlevel 1 exit /b 1

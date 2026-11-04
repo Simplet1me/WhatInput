@@ -133,6 +133,31 @@ static std::wstring executableName(DWORD pid) {
     std::transform(name.begin(), name.end(), name.begin(), towlower);
     return name;
 }
+static std::pair<std::string,std::string> hostedApplication(HWND root,DWORD hostPid){
+    struct Search {DWORD host;LONGLONG area=0;std::pair<std::string,std::string> app;};
+    Search search{hostPid};
+    EnumChildWindows(root,[](HWND child,LPARAM context)->BOOL{
+        if(!IsWindowVisible(child))return TRUE;
+        auto& state=*reinterpret_cast<Search*>(context);
+        DWORD pid=0;GetWindowThreadProcessId(child,&pid);
+        if(!pid||pid==state.host)return TRUE;
+        RECT rectangle{};if(!GetWindowRect(child,&rectangle))return TRUE;
+        const auto area=LONGLONG(rectangle.right-rectangle.left)*(rectangle.bottom-rectangle.top);
+        if(area<=state.area)return TRUE;
+        HANDLE process=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,FALSE,pid);
+        if(!process)return TRUE;
+        wchar_t path[32768];DWORD length=32768;
+        if(QueryFullProcessImageNameW(process,0,path,&length)){
+            std::wstring value(path,length);std::transform(value.begin(),value.end(),value.begin(),towlower);
+            auto name=fs::path(value).filename().wstring();
+            if(name!=L"runtimebroker.exe"&&name!=L"applicationframehost.exe"){
+                state.area=area;state.app={utf8(value),utf8(name)};
+            }
+        }
+        CloseHandle(process);return TRUE;
+    },reinterpret_cast<LPARAM>(&search));
+    return search.app;
+}
 static std::pair<std::string, std::string> application(bool mouse) {
     HWND h = GetForegroundWindow();
     if (mouse) {
@@ -173,6 +198,10 @@ static std::pair<std::string, std::string> application(bool mouse) {
             else
                 a = {utf8(v),
                      name == L"explorer.exe" ? "文件资源管理器" : utf8(name)};
+            if(name==L"runtimebroker.exe"||name==L"applicationframehost.exe"){
+                auto content=hostedApplication(h,pid);
+                if(!content.first.empty())a=std::move(content);
+            }
         }
         CloseHandle(p);
     }

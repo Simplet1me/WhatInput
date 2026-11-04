@@ -1,5 +1,6 @@
 #pragma once
 #include "engine.h"
+#include "application_labels.h"
 #include <QAbstractTableModel>
 #include <QHash>
 #include <QIcon>
@@ -15,7 +16,10 @@ class QTableWidget;
 class QCloseEvent;
 class QShowEvent;
 class QStackedWidget;
+class QSlider;
 class RankModel;
+class ActivityChart;
+class PeriodModel;
 
 class StatsWindow : public QMainWindow {
     Q_OBJECT
@@ -32,12 +36,20 @@ class StatsWindow : public QMainWindow {
   private:
     wi::Engine &engine_;
     QString root_;
-    QLabel *status_, *updated_, *message_;
+    ApplicationLabels applicationLabels_;
+    QLabel *status_, *message_, *pageTitle_;
     QTableView *table_;
     QTableWidget *software_;
     RankModel *model_;
     QStackedWidget *pages_;
     QComboBox *appFilter_, *deviceFilter_, *softwareDeviceFilter_;
+    QComboBox *activityAppFilter_, *activityDeviceFilter_, *period_;
+    QDateTimeEdit *rangeStart_, *rangeEnd_;
+    QWidget *timePanel_, *activityPanel_, *formula_, *dashboard_;
+    QTableView* activePeriods_;
+    PeriodModel* periodModel_;
+    ActivityChart* chart_;
+    QSlider* activityZoom_;
     QLabel *todayMouse_, *todayKeyboard_, *todayGamepad_, *todayTotal_;
     QTimer timer_;
     QHash<QString, QIcon> applicationIcons_;
@@ -45,6 +57,11 @@ class StatsWindow : public QMainWindow {
     QIcon applicationIcon(const QString &id);
     quint64 request_ = 0;
     bool exiting_ = false;
+    bool historyMode_ = false;
+    QDate queryDate_;
+    wi::ViewFilter appliedFilter_;
+    void selectPeriod();
+    void selectPage(int index);
     wi::ViewFilter filter() const;
     void query();
     void receive(std::shared_ptr<const wi::ViewResult> result);

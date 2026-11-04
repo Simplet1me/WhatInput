@@ -14,16 +14,22 @@ struct ViewFilter {
     Count start=0, end=INT64_MAX;
     std::string type, app;
     std::string softwareType;
+    std::string activityType, activityApp;
+    int activityZoom=0;
 };
 struct RankedControl { std::string type, control, name; Count count=0; };
 struct HourCount { Count start=0, end=0, count=0; };
+struct ActivePeriod { Count start=0, end=0, count=0; };
 struct RankedApplication { std::string id, name; Count count=0; };
 struct ViewResult {
     quint64 request=0;
     Count total=0;
     Count todayMouse=0, todayKeyboard=0, todayGamepad=0;
+    Count rangeStart=0, rangeEnd=0, activityBucketSeconds=3600;
     std::vector<RankedControl> controls;
     std::vector<HourCount> hours;
+    Count activityTotal=0, activeMinutes=0;
+    std::vector<ActivePeriod> activePeriods;
     std::vector<RankedApplication> software;
     std::map<std::string,std::string> applications;
     QString error;
@@ -51,6 +57,7 @@ public:
     void watch(ViewFilter filter,quint64 request);
     void unwatch();
     void refresh();
+    void setActivityZoom(int zoom);
     void setInterval(int seconds);
     void flush();
     void clear();
@@ -78,6 +85,7 @@ private:
     std::thread worker_;
     void run();
     void log(const QString& message);
+    void rememberSave();
 };
 }
 Q_DECLARE_METATYPE(std::shared_ptr<const wi::ViewResult>)
