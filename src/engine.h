@@ -16,6 +16,7 @@ struct ViewFilter {
     std::string softwareType;
     std::string activityType, activityApp;
     int activityZoom = 0;
+    bool mouseDetails=false;
 };
 struct RankedControl {
     std::string type, control, name;
@@ -44,6 +45,13 @@ struct ViewResult {
     std::map<std::string, std::string> applications;
     QString error;
     QDateTime updated;
+    struct MousePoint {int x=0,y=0;Count count=0;int button=0;bool operator==(const MousePoint&)const=default;};
+    struct MouseScreen {
+        MousePosition screen;
+        std::vector<MousePoint> points;
+        Count total=0;
+    };
+    std::vector<MouseScreen> mouseScreens;
 };
 struct EngineStatus {
     Count unsaved = 0, lastCommit = 0;
@@ -62,7 +70,8 @@ class Engine : public QObject {
     void start();
     void record(const std::string &type, const std::string &control,
                 const std::string &name, const std::string &app,
-                const std::string &appName, int count);
+                const std::string &appName, int count,
+                std::optional<MousePosition> position=std::nullopt);
     void inputError(const QString &message);
     void watch(ViewFilter filter, quint64 request);
     void unwatch();

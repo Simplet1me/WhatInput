@@ -36,15 +36,10 @@ foreach($process in $processes){
 New-Item -ItemType Directory -Path $release -Force | Out-Null
 $stamp=Join-Path $release '.whatinput-schema-version'
 $oldVersion=if(Test-Path -LiteralPath $stamp){(Get-Content -LiteralPath $stamp -Raw).Trim()}else{''}
-if($oldVersion -ne '3'){
-    $data=Join-Path $release 'data'
-    Assert-Within $data $release
-    foreach($name in @('whatinput.sqlite3','whatinput.sqlite3-wal','whatinput.sqlite3-shm','whatinput.sqlite3.pre-category-v1.bak')){
-        $target=Join-Path $data $name
-        Assert-Within $target $release
-        if(Test-Path -LiteralPath $target){Remove-Item -LiteralPath $target -Force}
-    }
-    Write-Output 'Old database removed for schema version 3 (no migration).'
+# This update must preserve keyboard/gamepad history as explicitly requested.
+# The application's transactional v3 -> v4 upgrade clears only old mouse counts.
+if($oldVersion -ne '4'){
+    Write-Output 'Schema v4: existing keyboard/gamepad data retained; old mouse counts will be reset on first launch.'
 }
 
 # Application titles are now live-only. Remove the obsolete generated name cache.
@@ -66,5 +61,5 @@ foreach($file in Get-ChildItem -LiteralPath $release -File){
     }
 }
 foreach($item in Get-ChildItem -LiteralPath $stage -Force){Copy-Item -LiteralPath $item.FullName -Destination $release -Recurse -Force}
-Set-Content -LiteralPath $stamp -Value '3' -Encoding ASCII
+Set-Content -LiteralPath $stamp -Value '4' -Encoding ASCII
 Write-Output "Deployed single-process Widgets build to $release"

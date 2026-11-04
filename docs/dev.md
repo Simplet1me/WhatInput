@@ -48,7 +48,7 @@
 
 ## SQLite
 
-数据库：`data/whatinput.sqlite3`，WAL、`synchronous=FULL`，存储版本 3。
+数据库：`data/whatinput.sqlite3`，WAL、`synchronous=FULL`，存储版本 4。鼠标另有 `mouse_screens` 配置表和 `mouse_positions` 坐标聚合表，位置明细和普通计数在同一批次事务内提交；键盘与手柄的计数结构不变。
 
 - `devices` 保存三个类别身份：`category:keyboard`、`category:mouse`、`category:gamepad`。
 - `controls` 保存控件代码及显示名，控件代码含设备类别前缀。
@@ -79,7 +79,7 @@
 
 `packaging/build.cmd` 执行 CMake 配置、单个 WhatInput 目标构建、安装到 `build/package`、windeployqt、更新 `release`。仅依赖 Qt Widgets/Qt Base，不再需要 WebEngine。
 
-`packaging/deploy.ps1` 清理旧应用运行组件，保留普通更新中的 config/logs/exports 等用户目录。存储版本改变时依据发布版本标记清除旧数据库，不重复删除同版本数据库。构建不运行任何测试或应用自检。
+`packaging/deploy.ps1` 清理旧应用运行组件，保留 config/logs/exports 等用户目录。本次用户明确要求保留键盘和手柄历史，因此 v3→v4 不删除整个数据库：首次启动时通过事务删除旧鼠标计数、创建位置表并更新版本，再次启动不重复清除。构建不运行任何测试或应用自检。
 
 ## 当前验证约束
 

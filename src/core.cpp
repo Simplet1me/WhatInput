@@ -92,11 +92,28 @@ Database::Database(const std::string &path, bool ro) {
                           ? sqlite3_column_int(versionQuery, 0)
                           : -1;
         sqlite3_finalize(versionQuery);
-        if (version != 0 && version != 3)
+        if (version != 0 && version != 3 && version != 4)
             throw std::runtime_error(
                 "Database format changed: close WhatInput and remove the old "
                 "database before restarting.");
-        exec("PRAGMA user_version=3;");
+        // This update explicitly preserves keyboard/gamepad history. Only the
+        // old mouse records are discarded, once, in the same schema transaction.
+        exec("BEGIN IMMEDIATE");
+        try {
+            exec("CREATE TABLE IF NOT EXISTS mouse_screens("
+                 "id INTEGER PRIMARY KEY,identity TEXT NOT NULL,name TEXT NOT NULL,"
+                 "desktop_x INTEGER NOT NULL,desktop_y INTEGER NOT NULL,"
+                 "width INTEGER NOT NULL CHECK(width>0),height INTEGER NOT NULL CHECK(height>0),"
+                 "UNIQUE(identity,desktop_x,desktop_y,width,height));"
+                 "CREATE TABLE IF NOT EXISTS mouse_positions("
+                 "second_utc INTEGER NOT NULL,app_id INTEGER NOT NULL REFERENCES apps(id),"
+                 "control_id INTEGER NOT NULL REFERENCES controls(id),"
+                 "screen_id INTEGER NOT NULL REFERENCES mouse_screens(id),"
+                 "x INTEGER NOT NULL,y INTEGER NOT NULL,press_count INTEGER NOT NULL CHECK(press_count>0),"
+                 "PRIMARY KEY(second_utc,app_id,control_id,screen_id,x,y)) WITHOUT ROWID;");
+            if(version==3)exec("DELETE FROM counts WHERE device_id IN (SELECT id FROM devices WHERE type='mouse');");
+            exec("PRAGMA user_version=4; COMMIT;");
+        }catch(...){sqlite3_exec(db_,"ROLLBACK",nullptr,nullptr,nullptr);throw;}
     } catch (...) {
         sqlite3_close(db_);
         db_ = nullptr;
@@ -169,6 +186,23 @@ void Database::commit(const std::string &batch, const Buffer &entries) {
                 n.text(4, k.app);
                 sqlite3_bind_int64(n.s, 5, e.count);
                 n.done();
+                if(k.type=="mouse"&&k.mouse){
+                    const auto& position=*k.mouse;
+                    Stmt screen(db_,"INSERT INTO mouse_screens(identity,name,desktop_x,desktop_y,width,height) "
+                        "VALUES(?,?,?,?,?,?) ON CONFLICT(identity,desktop_x,desktop_y,width,height) DO UPDATE SET name=excluded.name");
+                    screen.text(1,position.screenIdentity);screen.text(2,position.screenName);
+                    sqlite3_bind_int(screen.s,3,position.left);sqlite3_bind_int(screen.s,4,position.top);
+                    sqlite3_bind_int(screen.s,5,position.width);sqlite3_bind_int(screen.s,6,position.height);screen.done();
+                    Stmt point(db_,"INSERT INTO mouse_positions VALUES(?,(SELECT id FROM apps WHERE identity=?),"
+                        "(SELECT id FROM controls WHERE identity=?),(SELECT id FROM mouse_screens WHERE identity=? "
+                        "AND desktop_x=? AND desktop_y=? AND width=? AND height=?),?,?,?) "
+                        "ON CONFLICT(second_utc,app_id,control_id,screen_id,x,y) DO UPDATE SET press_count=press_count+excluded.press_count");
+                    sqlite3_bind_int64(point.s,1,k.second);point.text(2,k.app);point.text(3,k.control);point.text(4,position.screenIdentity);
+                    sqlite3_bind_int(point.s,5,position.left);sqlite3_bind_int(point.s,6,position.top);
+                    sqlite3_bind_int(point.s,7,position.width);sqlite3_bind_int(point.s,8,position.height);
+                    sqlite3_bind_int(point.s,9,position.x);sqlite3_bind_int(point.s,10,position.y);
+                    sqlite3_bind_int64(point.s,11,e.count);point.done();
+                }
             }
         exec("COMMIT");
     } catch (...) {
@@ -177,6 +211,6 @@ void Database::commit(const std::string &batch, const Buffer &entries) {
     }
 }
 void Database::clear() {
-    exec("BEGIN IMMEDIATE; DELETE FROM counts; DELETE FROM batches; COMMIT;");
+    exec("BEGIN IMMEDIATE; DELETE FROM mouse_positions; DELETE FROM mouse_screens; DELETE FROM counts; DELETE FROM batches; COMMIT;");
 }
 } // namespace wi

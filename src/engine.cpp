@@ -73,12 +73,19 @@ struct ViewCache {
     Count activityTotal = 0;
     std::map<std::string, Count> software;
     std::map<std::string, std::string> apps;
+    std::map<MousePosition,std::map<std::tuple<int,int,int>,Count>> mousePoints;
     Count total = 0;
     QDate today = QDate::currentDate();
     Count todayStart = today.startOfDay().toSecsSinceEpoch();
     Count todayEnd = today.addDays(1).startOfDay().toSecsSinceEpoch();
     Count todayMouse = 0, todayKeyboard = 0, todayGamepad = 0;
     bool valid = false;
+    void addMouse(const MousePosition& position,const std::string& control,Count count){
+        if(!filter.mouseDetails||!control.starts_with("mouse:button:"))return;
+        auto screen=position;screen.x=screen.y=0;
+        const int button=control.back()-'0';
+        mousePoints[screen][{position.x,position.y,button}]+=count;
+    }
     void add(const Entry &e) {
         apps[e.key.app] = e.appName;
         // Daily totals are independent of both ranking filters. Use local
@@ -108,6 +115,7 @@ struct ViewCache {
         }
         if (!matches(e.key, filter))
             return;
+        if(e.key.mouse)addMouse(*e.key.mouse,e.key.control,e.count);
         auto id = std::make_pair(e.key.type, e.key.control);
         auto [it, inserted] = controls.try_emplace(
             id, RankedControl{e.key.type, e.key.control, e.controlName, 0});
@@ -125,6 +133,12 @@ struct ViewCache {
         out->updated = QDateTime::currentDateTime();
         out->rangeStart = filter.start;
         out->rangeEnd = filter.end;
+        for(const auto& [screen,points]:mousePoints){
+            ViewResult::MouseScreen map;map.screen=screen;
+            for(const auto& [point,count]:points){map.points.push_back({std::get<0>(point),std::get<1>(point),count,std::get<2>(point)});map.total+=count;}
+            out->mouseScreens.push_back(std::move(map));
+        }
+        std::sort(out->mouseScreens.begin(),out->mouseScreens.end(),[](const auto& left,const auto& right){return std::tie(left.screen.left,left.screen.top,left.screen.width)<std::tie(right.screen.left,right.screen.top,right.screen.width);});
         out->activityTotal = activityTotal;
         out->activeMinutes = Count(activeMinutes.size());
         for (const auto &[minute, count] : activeMinutes) {
@@ -235,10 +249,12 @@ Engine::~Engine() {
 void Engine::start() { worker_ = std::thread(&Engine::run, this); }
 void Engine::record(const std::string &type, const std::string &control,
                     const std::string &name, const std::string &app,
-                    const std::string &appName, int count) {
+                    const std::string &appName, int count,
+                    std::optional<MousePosition> position) {
     if (count <= 0)
         return;
     Key k{nowSecond(), categoryId(type), type, control, app};
+    if(type=="mouse")k.mouse=std::move(position);
     Entry entry{k, categoryName(type), name, appName, count};
     std::lock_guard lock(mutex_);
     if (finishRequested_)
@@ -588,6 +604,20 @@ void Engine::run() {
                         cache.apps[apps.text(0)] = apps.text(1);
                     eachStored(*db, {viewFilter.start, viewFilter.end, "", ""},
                                [&](const Entry &e) { cache.add(e); });
+                    if(viewFilter.mouseDetails){
+                        Query points(db->handle(),
+                            "SELECT s.identity,s.name,s.desktop_x,s.desktop_y,s.width,s.height,p.x,p.y,k.identity,SUM(p.press_count) "
+                            "FROM mouse_positions p JOIN mouse_screens s ON s.id=p.screen_id "
+                            "JOIN controls k ON k.id=p.control_id JOIN apps a ON a.id=p.app_id "
+                            "WHERE p.second_utc>=?1 AND p.second_utc<?2 AND (?3='' OR a.identity=?3) "
+                            "GROUP BY p.screen_id,p.x,p.y,k.identity");
+                        sqlite3_bind_int64(points.s,1,viewFilter.start);sqlite3_bind_int64(points.s,2,viewFilter.end);points.text(3,viewFilter.app);
+                        while(points.next()){
+                            MousePosition point{points.text(0),points.text(1),sqlite3_column_int(points.s,2),sqlite3_column_int(points.s,3),
+                                sqlite3_column_int(points.s,4),sqlite3_column_int(points.s,5),sqlite3_column_int(points.s,6),sqlite3_column_int(points.s,7)};
+                            cache.addMouse(point,points.text(8),sqlite3_column_int64(points.s,9));
+                        }
+                    }
                     for (auto &[k, e] : pending)
                         cache.add(e);
                     for (auto &[k, e] : snapshot)

@@ -20,6 +20,7 @@ class QSlider;
 class RankModel;
 class ActivityChart;
 class KeyboardHeatmap;
+class MouseStatistics;
 
 class StatsWindow : public QMainWindow {
     Q_OBJECT
@@ -49,6 +50,7 @@ class StatsWindow : public QMainWindow {
     QWidget *timePanel_, *activityPanel_, *formula_, *dashboard_;
     QWidget *cardsPanel_, *keyboardPanel_;
     KeyboardHeatmap *keyboardHeatmap_;
+    MouseStatistics* mouseStatistics_;
     ActivityChart *chart_;
     QSlider *activityZoom_;
     QLabel *todayMouse_, *todayKeyboard_, *todayGamepad_, *todayTotal_;
@@ -61,6 +63,10 @@ class StatsWindow : public QMainWindow {
     bool exiting_ = false;
     bool historyMode_ = false;
     bool keyboardMode_ = false;
+    bool mouseMode_=false;
+    int currentPage_=0;
+    struct TimeSelection {int period=0;QDateTime start,end;};
+    std::map<int,TimeSelection> timeSelections_;
     QDate queryDate_;
     wi::ViewFilter appliedFilter_;
     void selectPeriod();

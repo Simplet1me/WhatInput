@@ -1,5 +1,6 @@
 #include "window.h"
 #include "keyboard_heatmap.h"
+#include "mouse_statistics.h"
 #include <QApplication>
 #include <QCloseEvent>
 #include <QComboBox>
@@ -308,7 +309,7 @@ StatsWindow::StatsWindow(wi::Engine &engine, QString root, QWidget *parent)
     period_ = new QComboBox(timePanel_);
     period_->addItems(
         {"今天", "昨天", "最近一周", "一月", "全部时间", "自定义范围"});
-    period_->setCurrentIndex(2);
+    period_->setCurrentIndex(0);
     period_->setToolTip("一月为最近一个月，所有时间范围均含起点、不含终点");
     rangeStart_ = new QDateTimeEdit(timePanel_);
     rangeEnd_ = new QDateTimeEdit(timePanel_);
@@ -445,6 +446,7 @@ StatsWindow::StatsWindow(wi::Engine &engine, QString root, QWidget *parent)
     keyboardLayout->addWidget(keyboardScroll, 1);
     keyboardPanel_->hide();
     homeLayout->addWidget(keyboardPanel_, 1);
+    mouseStatistics_=new MouseStatistics(home);mouseStatistics_->hide();homeLayout->addWidget(mouseStatistics_,1);
     activityPanel_ = new QFrame(home);
     activityPanel_->setObjectName("panel");
     auto activityLayout = new QVBoxLayout(activityPanel_);
@@ -509,7 +511,7 @@ StatsWindow::StatsWindow(wi::Engine &engine, QString root, QWidget *parent)
     dashboardScroll->setWidget(home);
     home->setAutoFillBackground(false);
     pages_->addWidget(dashboardScroll);
-    for (auto name : QStringList{"鼠标统计", "手柄统计"}) {
+    for (auto name : QStringList{"手柄统计"}) {
         auto page = new QWidget(pages_);
         auto layout = new QVBoxLayout(page);
         layout->setContentsMargins(0, 0, 0, 0);
@@ -580,7 +582,7 @@ QScrollArea{background:#101922;border:0;}
             }
             if (pages_->currentIndex() == 0) {
                 if (queryDate_ != QDate::currentDate()) {
-                    if ((historyMode_ || keyboardMode_) &&
+                    if ((historyMode_ || keyboardMode_ || mouseMode_) &&
                         period_->currentIndex() != 5)
                         selectPeriod();
                     else
@@ -596,18 +598,18 @@ QScrollArea{background:#101922;border:0;}
 }
 wi::ViewFilter StatsWindow::filter() const {
     const auto date = QDate::currentDate();
-    const bool ranged = historyMode_ || keyboardMode_;
+    const bool ranged = historyMode_ || keyboardMode_ || mouseMode_;
     const bool all = ranged && period_->currentIndex() == 4;
-    return {all      ? 0
+    wi::ViewFilter selected{all      ? 0
             : ranged ? rangeStart_->dateTime().toSecsSinceEpoch()
                      : date.startOfDay().toSecsSinceEpoch(),
             all      ? INT64_MAX
             : ranged ? rangeEnd_->dateTime().toSecsSinceEpoch()
                      : date.addDays(1).startOfDay().toSecsSinceEpoch(),
-            keyboardMode_
+            mouseMode_?std::string("mouse"):keyboardMode_
                 ? std::string("keyboard")
                 : deviceFilter_->currentData().toString().toStdString(),
-            (keyboardMode_ ? keyboardAppFilter_ : appFilter_)
+            mouseMode_?std::string{}:(keyboardMode_ ? keyboardAppFilter_ : appFilter_)
                 ->currentData()
                 .toString()
                 .toStdString(),
@@ -615,22 +617,33 @@ wi::ViewFilter StatsWindow::filter() const {
             activityDeviceFilter_->currentData().toString().toStdString(),
             activityAppFilter_->currentData().toString().toStdString(),
             activityZoom_->value()};
+    selected.mouseDetails=mouseMode_;return selected;
 }
 void StatsWindow::selectPage(int index) {
+    if(historyMode_||keyboardMode_||mouseMode_)timeSelections_[currentPage_]={period_->currentIndex(),rangeStart_->dateTime(),rangeEnd_->dateTime()};
+    currentPage_=index;
     historyMode_ = index == 1;
     keyboardMode_ = index == 2;
-    pages_->setCurrentIndex(index < 3 ? 0 : index - 2);
+    mouseMode_=index==3;
+    pages_->setCurrentIndex(index < 4 ? 0 : index - 3);
     pageTitle_->setText(historyMode_    ? "历史统计"
                         : keyboardMode_ ? "键盘统计"
-                                        : "首页");
+                        : mouseMode_?"鼠标统计":"首页");
     formula_->setVisible(index == 0);
-    cardsPanel_->setVisible(!keyboardMode_);
+    cardsPanel_->setVisible(!keyboardMode_&&!mouseMode_);
     keyboardPanel_->setVisible(keyboardMode_);
-    timePanel_->setVisible(historyMode_ || keyboardMode_);
+    mouseStatistics_->setVisible(mouseMode_);
+    timePanel_->setVisible(historyMode_ || keyboardMode_ || mouseMode_);
     activityPanel_->setVisible(historyMode_);
     dashboard_->setMinimumHeight(historyMode_ ? 860 : 0);
     message_->hide();
-    if ((historyMode_ || keyboardMode_) && period_->currentIndex() != 5)
+    if(historyMode_||keyboardMode_||mouseMode_){
+        const auto selection=timeSelections_[index];QSignalBlocker blocker(period_);period_->setCurrentIndex(selection.period);
+        if(selection.start.isValid())rangeStart_->setDateTime(selection.start);
+        if(selection.end.isValid())rangeEnd_->setDateTime(selection.end);
+        rangeStart_->setEnabled(selection.period==5);rangeEnd_->setEnabled(selection.period==5);
+    }
+    if ((historyMode_ || keyboardMode_ || mouseMode_) && period_->currentIndex() != 5)
         selectPeriod();
     else
         query();
@@ -735,12 +748,13 @@ void StatsWindow::receive(std::shared_ptr<const wi::ViewResult> result) {
             combo->setCurrentIndex(std::max(0, index));
         }
     }
-    if ((historyMode_ || keyboardMode_) && period_->currentIndex() == 4) {
+    if ((historyMode_ || keyboardMode_ || mouseMode_) && period_->currentIndex() == 4) {
         rangeStart_->setDateTime(
             QDateTime::fromSecsSinceEpoch(result->rangeStart).toLocalTime());
         rangeEnd_->setDateTime(
             QDateTime::fromSecsSinceEpoch(result->rangeEnd).toLocalTime());
     }
+    if(mouseMode_){mouseStatistics_->setStatistics(*result);updateStatus();return;}
     if (keyboardMode_) {
         keyboardHeatmap_->setStatistics(*result);
         updateStatus();

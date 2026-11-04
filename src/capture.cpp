@@ -250,13 +250,38 @@ static std::pair<std::string, std::string> application(bool mouse) {
     return a;
 }
 
+static std::optional<wi::MousePosition> mousePosition(){
+    POINT point{};if(!GetPhysicalCursorPos(&point))return std::nullopt;
+    const auto monitor=MonitorFromPoint(point,MONITOR_DEFAULTTONULL);if(!monitor)return std::nullopt;
+    MONITORINFOEXW info{};info.cbSize=sizeof(info);
+    if(!GetMonitorInfoW(monitor,&info))return std::nullopt;
+    static std::map<std::wstring,std::string> screenIdentities;
+    static ULONGLONG refreshed=0;
+    const auto now=GetTickCount64();if(now-refreshed>5000){screenIdentities.clear();refreshed=now;}
+    const std::wstring display=info.szDevice;
+    auto found=screenIdentities.find(display);
+    if(found==screenIdentities.end()){
+        DISPLAY_DEVICEW device{};device.cb=sizeof(device);
+        const auto id=EnumDisplayDevicesW(info.szDevice,0,&device,EDD_GET_DEVICE_INTERFACE_NAME)&&device.DeviceID[0]?
+            utf8(device.DeviceID):utf8(display);
+        found=screenIdentities.emplace(display,id).first;
+    }
+    wi::MousePosition position;
+    position.screenIdentity=found->second;position.screenName=utf8(display);
+    position.left=info.rcMonitor.left;position.top=info.rcMonitor.top;
+    position.width=info.rcMonitor.right-info.rcMonitor.left;position.height=info.rcMonitor.bottom-info.rcMonitor.top;
+    position.x=point.x-position.left;position.y=point.y-position.top;
+    if(position.width<=0||position.height<=0||position.x<0||position.y<0||position.x>=position.width||position.y>=position.height)return std::nullopt;
+    return position;
+}
 static void add(const std::string &, const std::string &type,
                 const std::string &, const std::string &control,
                 const std::string &name, int count, bool mouse) {
     if (count <= 0 || sleeping || stopping)
         return;
+    const auto position=mouse?mousePosition():std::nullopt;
     const auto app = application(mouse);
-    service->record(type, control, name, app.first, app.second, count);
+    service->record(type, control, name, app.first, app.second, count,position);
     if (type == "keyboard")
         acceptedKeyboard += count;
     else if (type == "mouse")

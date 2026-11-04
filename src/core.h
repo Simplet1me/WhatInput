@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <set>
 #include <sqlite3.h>
 #include <string>
@@ -11,9 +12,15 @@ namespace wi {
 std::string categoryId(const std::string &type);
 std::string categoryName(const std::string &type);
 using Count = std::int64_t;
+struct MousePosition {
+    std::string screenIdentity, screenName;
+    int left=0, top=0, width=0, height=0, x=0, y=0;
+    auto operator<=>(const MousePosition&) const = default;
+};
 struct Key {
     Count second{};
     std::string device, type, control, app;
+    std::optional<MousePosition> mouse;
     auto operator<=>(const Key &) const = default;
 };
 struct Entry {
