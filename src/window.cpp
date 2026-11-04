@@ -1,4 +1,5 @@
 #include "window.h"
+#include "keyboard_heatmap.h"
 #include <QApplication>
 #include <QCloseEvent>
 #include <QComboBox>
@@ -110,28 +111,6 @@ class RankModel : public QAbstractTableModel {
     }
 };
 
-class PeriodModel : public QAbstractTableModel {
-  public:
-    using QAbstractTableModel::QAbstractTableModel;
-    std::vector<wi::ActivePeriod> rows;
-    int rowCount(const QModelIndex& parent={})const override{return parent.isValid()?0:int(rows.size());}
-    int columnCount(const QModelIndex& parent={})const override{return parent.isValid()?0:3;}
-    QVariant headerData(int section,Qt::Orientation orientation,int role)const override{
-        if(orientation==Qt::Horizontal&&role==Qt::DisplayRole)return QStringList{"开始时间","结束时间（不含）","输入次数"}.value(section);
-        return {};
-    }
-    QVariant data(const QModelIndex& index,int role)const override{
-        if(!index.isValid()||index.row()>=int(rows.size()))return {};
-        if(role==Qt::TextAlignmentRole)return int(index.column()==2?Qt::AlignRight|Qt::AlignVCenter:Qt::AlignLeft|Qt::AlignVCenter);
-        if(role!=Qt::DisplayRole)return {};
-        const auto& row=rows[index.row()];
-        if(index.column()==0)return datetime(row.start);
-        if(index.column()==1)return datetime(row.end);
-        return number(row.count);
-    }
-    void replace(const std::vector<wi::ActivePeriod>& data){beginResetModel();rows.assign(data.rbegin(),data.rend());endResetModel();}
-};
-
 class ActivityChart : public QWidget {
   public:
     std::vector<wi::HourCount> bars;
@@ -210,7 +189,7 @@ StatsWindow::StatsWindow(wi::Engine &engine, QString root, QWidget *parent)
     auto history = new QTreeWidgetItem(tree, QStringList{"历史统计"});
     history->setData(0, Qt::UserRole, 1);
     int pageIndex=2;
-    for (auto name : QStringList{"键盘输入", "鼠标输入", "手柄输入"}) {
+    for (auto name : QStringList{"键盘统计", "鼠标统计", "手柄统计"}) {
         auto item = new QTreeWidgetItem(tree, QStringList{name});
         item->setData(0, Qt::UserRole, pageIndex++);
     }
@@ -296,7 +275,7 @@ StatsWindow::StatsWindow(wi::Engine &engine, QString root, QWidget *parent)
     timePanel_->hide();homeLayout->addWidget(timePanel_);
     connect(period_,&QComboBox::currentIndexChanged,this,[this]{selectPeriod();});
     connect(applyRange,&QPushButton::clicked,this,[this]{query();});
-    auto cards = new QHBoxLayout;
+    cardsPanel_=new QWidget(home);auto cards = new QHBoxLayout(cardsPanel_);cards->setContentsMargins(0,0,0,0);
     cards->setSpacing(36);
     auto keys = new QFrame(home);
     keys->setMinimumHeight(320);
@@ -377,7 +356,13 @@ StatsWindow::StatsWindow(wi::Engine &engine, QString root, QWidget *parent)
     appLayout->addWidget(software_, 1);
     cards->addWidget(keys, 1);
     cards->addWidget(apps, 1);
-    homeLayout->addLayout(cards, 1);
+    homeLayout->addWidget(cardsPanel_, 1);
+    keyboardPanel_=new QFrame(home);keyboardPanel_->setObjectName("panel");
+    auto keyboardLayout=new QVBoxLayout(keyboardPanel_);keyboardLayout->setContentsMargins(20,20,20,20);
+    auto keyboardHeader=new QHBoxLayout;keyboardHeader->addWidget(heading("键盘热力图",keyboardPanel_));keyboardHeader->addStretch();
+    keyboardAppFilter_=new QComboBox(keyboardPanel_);keyboardAppFilter_->addItem("全部软件","");keyboardAppFilter_->setIconSize(QSize(22,22));keyboardAppFilter_->setMinimumContentsLength(12);keyboardAppFilter_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);keyboardAppFilter_->setMaximumWidth(360);keyboardAppFilter_->view()->setMinimumWidth(360);keyboardAppFilter_->setAccessibleName("键盘统计软件筛选");keyboardHeader->addWidget(keyboardAppFilter_);keyboardLayout->addLayout(keyboardHeader);
+    connect(keyboardAppFilter_,&QComboBox::currentIndexChanged,this,[this]{query();});
+    keyboardHeatmap_=new KeyboardHeatmap(keyboardPanel_);auto keyboardScroll=new QScrollArea(keyboardPanel_);keyboardScroll->setObjectName("keyboardScroll");keyboardScroll->viewport()->setObjectName("keyboardViewport");keyboardScroll->setWidgetResizable(true);keyboardScroll->setFrameShape(QFrame::NoFrame);keyboardScroll->setWidget(keyboardHeatmap_);keyboardLayout->addWidget(keyboardScroll,1);keyboardPanel_->hide();homeLayout->addWidget(keyboardPanel_,1);
     activityPanel_=new QFrame(home);activityPanel_->setObjectName("panel");
     auto activityLayout=new QVBoxLayout(activityPanel_);activityLayout->setContentsMargins(20,16,20,16);
     auto activityHeader=new QHBoxLayout;activityHeader->addWidget(heading("时间活跃度",activityPanel_));activityHeader->addStretch();
@@ -392,12 +377,10 @@ StatsWindow::StatsWindow(wi::Engine &engine, QString root, QWidget *parent)
     connect(finer,&QPushButton::clicked,this,[this]{activityZoom_->setValue(0);});connect(overview,&QPushButton::clicked,this,[this]{activityZoom_->setValue(100);});
     connect(activityZoom_,&QSlider::valueChanged,this,[this](int value){if(historyMode_)engine_.setActivityZoom(value);});
     chart_=new ActivityChart(activityPanel_);auto chartScroll=new QScrollArea(activityPanel_);chartScroll->setObjectName("activityScroll");chartScroll->viewport()->setObjectName("activityViewport");chartScroll->setFrameShape(QFrame::NoFrame);chartScroll->setWidgetResizable(true);chartScroll->setWidget(chart_);chartScroll->setMinimumHeight(235);activityLayout->addWidget(chartScroll);
-    activityLayout->addWidget(heading("活跃时段",activityPanel_));
-    activePeriods_=new QTableView(activityPanel_);periodModel_=new PeriodModel(this);activePeriods_->setModel(periodModel_);activePeriods_->verticalHeader()->hide();activePeriods_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);activePeriods_->setEditTriggers(QAbstractItemView::NoEditTriggers);activePeriods_->setSelectionBehavior(QAbstractItemView::SelectRows);activePeriods_->setShowGrid(false);activePeriods_->setMinimumHeight(180);activityLayout->addWidget(activePeriods_);
     activityPanel_->hide();homeLayout->addWidget(activityPanel_);
     auto dashboardScroll=new QScrollArea(pages_);dashboardScroll->viewport()->setObjectName("dashboardViewport");dashboardScroll->setFrameShape(QFrame::NoFrame);dashboardScroll->setWidgetResizable(true);dashboardScroll->setWidget(home);home->setAutoFillBackground(false);pages_->addWidget(dashboardScroll);
     for (auto name :
-         QStringList{"键盘输入", "鼠标输入", "手柄输入"}) {
+         QStringList{"鼠标统计", "手柄统计"}) {
         auto page = new QWidget(pages_);
         auto layout = new QVBoxLayout(page);
         layout->setContentsMargins(0, 0, 0, 0);
@@ -414,11 +397,6 @@ StatsWindow::StatsWindow(wi::Engine &engine, QString root, QWidget *parent)
         label->setAlignment(Qt::AlignCenter);
         label->setObjectName("sectionTitle");
         empty->addWidget(label);
-        auto hint =
-            new QLabel("历史明细与筛选功能将在后续版本加入。", placeholder);
-        hint->setAlignment(Qt::AlignCenter);
-        hint->setObjectName("muted");
-        empty->addWidget(hint);
         empty->addStretch();
         layout->addWidget(placeholder, 1);
         pages_->addWidget(page);
@@ -435,7 +413,7 @@ StatsWindow::StatsWindow(wi::Engine &engine, QString root, QWidget *parent)
     setStyleSheet(R"(
 QMainWindow,QDialog{background:#101922;color:#dce7ee;}
 QWidget#central,QWidget#dashboard,QWidget#dashboardViewport,QStackedWidget#pageStack{background:#101922;}
-QWidget#activityViewport,QScrollArea#activityScroll{background:#17232e;}
+QWidget#activityViewport,QScrollArea#activityScroll,QWidget#keyboardViewport,QScrollArea#keyboardScroll{background:#17232e;}
 QWidget{color:#dce7ee;font-family:'Microsoft YaHei UI';font-size:13px;}
 QFrame#sidebar{background:#14212c;border-right:1px solid #2e3e4b;}
 QLabel#brand{font-size:24px;font-weight:700;color:#a9edc8;}QLabel#hero{font-size:26px;font-weight:600;}QLabel#muted{color:#91a7b7;font-size:12px;}QLabel#sectionTitle{font-size:17px;font-weight:600;margin-bottom:8px;}
@@ -470,7 +448,7 @@ QScrollArea{background:#101922;border:0;}
             if(++nameRefreshTicks_>=10){nameRefreshTicks_=0;refreshApplicationNames();}
             if (pages_->currentIndex() == 0){
                 if(queryDate_!=QDate::currentDate()){
-                    if(historyMode_&&period_->currentIndex()!=5)selectPeriod();
+                    if((historyMode_||keyboardMode_)&&period_->currentIndex()!=5)selectPeriod();
                     else query();
                 }else engine_.refresh();
             }
@@ -481,24 +459,27 @@ QScrollArea{background:#101922;border:0;}
 }
 wi::ViewFilter StatsWindow::filter() const {
     const auto date=QDate::currentDate();
-    const bool all=historyMode_&&period_->currentIndex()==4;
-    return {all?0:historyMode_?rangeStart_->dateTime().toSecsSinceEpoch():date.startOfDay().toSecsSinceEpoch(),
-            all?INT64_MAX:historyMode_?rangeEnd_->dateTime().toSecsSinceEpoch():date.addDays(1).startOfDay().toSecsSinceEpoch(),
-            deviceFilter_->currentData().toString().toStdString(),
-            appFilter_->currentData().toString().toStdString(),
+    const bool ranged=historyMode_||keyboardMode_;
+    const bool all=ranged&&period_->currentIndex()==4;
+    return {all?0:ranged?rangeStart_->dateTime().toSecsSinceEpoch():date.startOfDay().toSecsSinceEpoch(),
+            all?INT64_MAX:ranged?rangeEnd_->dateTime().toSecsSinceEpoch():date.addDays(1).startOfDay().toSecsSinceEpoch(),
+            keyboardMode_?std::string("keyboard"):deviceFilter_->currentData().toString().toStdString(),
+            (keyboardMode_?keyboardAppFilter_:appFilter_)->currentData().toString().toStdString(),
             softwareDeviceFilter_->currentData().toString().toStdString(),
             activityDeviceFilter_->currentData().toString().toStdString(),
             activityAppFilter_->currentData().toString().toStdString(),activityZoom_->value()};
 }
 void StatsWindow::selectPage(int index){
     historyMode_=index==1;
-    pages_->setCurrentIndex(index<2?0:index-1);
-    pageTitle_->setText(historyMode_?"历史统计":"首页");
-    formula_->setVisible(!historyMode_);
-    timePanel_->setVisible(historyMode_);activityPanel_->setVisible(historyMode_);
-    dashboard_->setMinimumHeight(historyMode_?1080:0);
+    keyboardMode_=index==2;
+    pages_->setCurrentIndex(index<3?0:index-2);
+    pageTitle_->setText(historyMode_?"历史统计":keyboardMode_?"键盘统计":"首页");
+    formula_->setVisible(index==0);
+    cardsPanel_->setVisible(!keyboardMode_);keyboardPanel_->setVisible(keyboardMode_);
+    timePanel_->setVisible(historyMode_||keyboardMode_);activityPanel_->setVisible(historyMode_);
+    dashboard_->setMinimumHeight(historyMode_?860:0);
     message_->hide();
-    if(historyMode_&&period_->currentIndex()!=5)selectPeriod();else query();
+    if((historyMode_||keyboardMode_)&&period_->currentIndex()!=5)selectPeriod();else query();
 }
 void StatsWindow::selectPeriod(){
     const bool custom=period_->currentIndex()==5;
@@ -540,7 +521,7 @@ void StatsWindow::receive(std::shared_ptr<const wi::ViewResult> result) {
         message_->show();
         return;
     }
-    for(auto combo:{appFilter_,activityAppFilter_}){
+    for(auto combo:{appFilter_,activityAppFilter_,keyboardAppFilter_}){
         const auto selected=combo->currentData().toString();
         bool changed=combo->count()!=int(result->applications.size())+1;
         if(!changed){int i=1;for(const auto& [id,name]:result->applications){
@@ -554,6 +535,8 @@ void StatsWindow::receive(std::shared_ptr<const wi::ViewResult> result) {
             combo->setCurrentIndex(std::max(0,index));
         }
     }
+    if((historyMode_||keyboardMode_)&&period_->currentIndex()==4){rangeStart_->setDateTime(QDateTime::fromSecsSinceEpoch(result->rangeStart).toLocalTime());rangeEnd_->setDateTime(QDateTime::fromSecsSinceEpoch(result->rangeEnd).toLocalTime());}
+    if(keyboardMode_){keyboardHeatmap_->setStatistics(*result);updateStatus();return;}
     todayMouse_->setText(number(result->todayMouse));
     todayKeyboard_->setText(number(result->todayKeyboard));
     todayGamepad_->setText(number(result->todayGamepad));
@@ -589,13 +572,12 @@ void StatsWindow::receive(std::shared_ptr<const wi::ViewResult> result) {
         const auto step=result->activityBucketSeconds;
         activityZoom_->setToolTip("每格 "+(step%86400==0?QString::number(step/86400)+" 天":QString::number(step/3600)+" 小时"));
         if(period_->currentIndex()==4){rangeStart_->setDateTime(QDateTime::fromSecsSinceEpoch(result->rangeStart).toLocalTime());rangeEnd_->setDateTime(QDateTime::fromSecsSinceEpoch(result->rangeEnd).toLocalTime());}
-        const auto position=activePeriods_->verticalScrollBar()->value();periodModel_->replace(result->activePeriods);activePeriods_->verticalScrollBar()->setValue(position);
     }
     updateStatus();
 }
 void StatsWindow::refreshApplicationNames(){
     applicationLabels_.refresh();
-    for(auto combo:{appFilter_,activityAppFilter_}){
+    for(auto combo:{appFilter_,activityAppFilter_,keyboardAppFilter_}){
         QSignalBlocker blocker(combo);
         for(int i=1;i<combo->count();++i){
             const auto title=applicationLabels_.label(combo->itemData(i).toString(),combo->itemData(i,Qt::UserRole+1).toString());

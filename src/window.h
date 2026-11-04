@@ -19,7 +19,7 @@ class QStackedWidget;
 class QSlider;
 class RankModel;
 class ActivityChart;
-class PeriodModel;
+class KeyboardHeatmap;
 
 class StatsWindow : public QMainWindow {
     Q_OBJECT
@@ -44,10 +44,11 @@ class StatsWindow : public QMainWindow {
     QStackedWidget *pages_;
     QComboBox *appFilter_, *deviceFilter_, *softwareDeviceFilter_;
     QComboBox *activityAppFilter_, *activityDeviceFilter_, *period_;
+    QComboBox* keyboardAppFilter_;
     QDateTimeEdit *rangeStart_, *rangeEnd_;
     QWidget *timePanel_, *activityPanel_, *formula_, *dashboard_;
-    QTableView* activePeriods_;
-    PeriodModel* periodModel_;
+    QWidget *cardsPanel_, *keyboardPanel_;
+    KeyboardHeatmap* keyboardHeatmap_;
     ActivityChart* chart_;
     QSlider* activityZoom_;
     QLabel *todayMouse_, *todayKeyboard_, *todayGamepad_, *todayTotal_;
@@ -59,6 +60,7 @@ class StatsWindow : public QMainWindow {
     quint64 request_ = 0;
     bool exiting_ = false;
     bool historyMode_ = false;
+    bool keyboardMode_ = false;
     QDate queryDate_;
     wi::ViewFilter appliedFilter_;
     void selectPeriod();
