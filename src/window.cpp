@@ -447,6 +447,7 @@ StatsWindow::StatsWindow(wi::Engine &engine, QString root, QWidget *parent)
     keyboardPanel_->hide();
     homeLayout->addWidget(keyboardPanel_, 1);
     mouseStatistics_=new MouseStatistics(home);mouseStatistics_->hide();homeLayout->addWidget(mouseStatistics_,1);
+    connect(mouseStatistics_->softwareFilter(),&QComboBox::currentIndexChanged,this,[this]{if(mouseMode_)query();});
     activityPanel_ = new QFrame(home);
     activityPanel_->setObjectName("panel");
     auto activityLayout = new QVBoxLayout(activityPanel_);
@@ -609,7 +610,7 @@ wi::ViewFilter StatsWindow::filter() const {
             mouseMode_?std::string("mouse"):keyboardMode_
                 ? std::string("keyboard")
                 : deviceFilter_->currentData().toString().toStdString(),
-            mouseMode_?std::string{}:(keyboardMode_ ? keyboardAppFilter_ : appFilter_)
+            (mouseMode_?mouseStatistics_->softwareFilter():(keyboardMode_ ? keyboardAppFilter_ : appFilter_))
                 ->currentData()
                 .toString()
                 .toStdString(),
@@ -620,6 +621,7 @@ wi::ViewFilter StatsWindow::filter() const {
     selected.mouseDetails=mouseMode_;return selected;
 }
 void StatsWindow::selectPage(int index) {
+    if(mouseMode_&&index!=3)mouseStatistics_->clearRendering();
     if(historyMode_||keyboardMode_||mouseMode_)timeSelections_[currentPage_]={period_->currentIndex(),rangeStart_->dateTime(),rangeEnd_->dateTime()};
     currentPage_=index;
     historyMode_ = index == 1;
@@ -692,6 +694,7 @@ void StatsWindow::query() {
     message_->hide();
     if (isVisible() && !isMinimized()) {
         refreshApplicationNames();
+        if(mouseMode_)mouseStatistics_->clearRendering();
         appliedFilter_ = selected;
         model_->replace(wi::ViewResult{});
         engine_.watch(selected, ++request_);
@@ -707,7 +710,7 @@ void StatsWindow::receive(std::shared_ptr<const wi::ViewResult> result) {
         message_->show();
         return;
     }
-    for (auto combo : {appFilter_, activityAppFilter_, keyboardAppFilter_}) {
+    for (auto combo : {appFilter_, activityAppFilter_, keyboardAppFilter_,mouseStatistics_->softwareFilter()}) {
         const auto selected = combo->currentData().toString();
         bool changed = combo->count() != int(result->applications.size()) + 1;
         if (!changed) {
@@ -811,7 +814,7 @@ void StatsWindow::receive(std::shared_ptr<const wi::ViewResult> result) {
 }
 void StatsWindow::refreshApplicationNames() {
     applicationLabels_.refresh();
-    for (auto combo : {appFilter_, activityAppFilter_, keyboardAppFilter_}) {
+    for (auto combo : {appFilter_, activityAppFilter_, keyboardAppFilter_,mouseStatistics_->softwareFilter()}) {
         QSignalBlocker blocker(combo);
         for (int i = 1; i < combo->count(); ++i) {
             const auto title = applicationLabels_.label(
@@ -952,6 +955,7 @@ void StatsWindow::prepareExit() {
     exiting_ = true;
     timer_.stop();
     engine_.unwatch();
+    mouseStatistics_->clearRendering();
     setEnabled(false);
     updateStatus();
 }
@@ -960,6 +964,7 @@ void StatsWindow::closeEvent(QCloseEvent *event) {
     hide();
     timer_.stop();
     engine_.unwatch();
+    mouseStatistics_->clearRendering();
 }
 void StatsWindow::showEvent(QShowEvent *event) {
     QMainWindow::showEvent(event);
@@ -974,6 +979,7 @@ void StatsWindow::changeEvent(QEvent *event) {
         if (isMinimized()) {
             timer_.stop();
             engine_.unwatch();
+            mouseStatistics_->clearRendering();
         } else if (isVisible()) {
             timer_.start();
             query();
