@@ -6,8 +6,8 @@
 #include <QSaveFile>
 #include <QTimeZone>
 #include <algorithm>
-#include <cmath>
 #include <chrono>
+#include <cmath>
 #include <functional>
 
 namespace wi {
@@ -84,18 +84,25 @@ struct ViewCache {
         // Daily totals are independent of both ranking filters. Use local
         // calendar boundaries (not a fixed 24 hours) and include memory deltas.
         if (e.key.second >= todayStart && e.key.second < todayEnd) {
-            if (e.key.type == "mouse") todayMouse += e.count;
-            else if (e.key.type == "keyboard") todayKeyboard += e.count;
-            else if (e.key.type == "gamepad") todayGamepad += e.count;
+            if (e.key.type == "mouse")
+                todayMouse += e.count;
+            else if (e.key.type == "keyboard")
+                todayKeyboard += e.count;
+            else if (e.key.type == "gamepad")
+                todayGamepad += e.count;
         }
         if (e.key.second >= filter.start && e.key.second < filter.end &&
-            (filter.softwareType.empty() || e.key.type == filter.softwareType) &&
-            (e.key.type != "mouse" || e.key.control.starts_with("mouse:button:")))
+            (filter.softwareType.empty() ||
+             e.key.type == filter.softwareType) &&
+            (e.key.type != "mouse" ||
+             e.key.control.starts_with("mouse:button:")))
             software[e.key.app] += e.count;
         if (e.key.second >= filter.start && e.key.second < filter.end &&
-            (filter.activityType.empty() || e.key.type == filter.activityType) &&
+            (filter.activityType.empty() ||
+             e.key.type == filter.activityType) &&
             (filter.activityApp.empty() || e.key.app == filter.activityApp)) {
-            const auto local = QDateTime::fromSecsSinceEpoch(e.key.second).toLocalTime();
+            const auto local =
+                QDateTime::fromSecsSinceEpoch(e.key.second).toLocalTime();
             activeMinutes[e.key.second - local.time().second()] += e.count;
             activityTotal += e.count;
         }
@@ -116,16 +123,19 @@ struct ViewCache {
         out->todayGamepad = todayGamepad;
         out->applications = apps;
         out->updated = QDateTime::currentDateTime();
-        out->rangeStart=filter.start;out->rangeEnd=filter.end;
+        out->rangeStart = filter.start;
+        out->rangeEnd = filter.end;
         out->activityTotal = activityTotal;
         out->activeMinutes = Count(activeMinutes.size());
-        for (const auto& [minute, count] : activeMinutes) {
+        for (const auto &[minute, count] : activeMinutes) {
             const Count start = std::max(minute, filter.start);
             const Count end = std::min(minute + 60, filter.end);
-            if (!out->activePeriods.empty() && out->activePeriods.back().end == start) {
+            if (!out->activePeriods.empty() &&
+                out->activePeriods.back().end == start) {
                 out->activePeriods.back().end = end;
                 out->activePeriods.back().count += count;
-            } else out->activePeriods.push_back({start, end, count});
+            } else
+                out->activePeriods.push_back({start, end, count});
         }
         for (auto &[key, row] : controls)
             out->controls.push_back(row);
@@ -136,22 +146,43 @@ struct ViewCache {
                                  : std::tie(a.type, a.control) <
                                        std::tie(b.type, b.control);
                   });
-        const Count span=std::max<Count>(1,filter.end-filter.start);
-        const Count minimum=span<=25*3600?3600:span<=8*86400?43200:span<=32*86400?86400:
-            ((span+31*86400LL-1)/(31*86400LL))*86400;
-        const Count maximum=std::max(minimum,((span+3599)/3600)*3600);
-        const double fraction=std::clamp(filter.activityZoom,0,100)/100.0;
-        const double interpolated=std::exp(std::log(double(minimum))+fraction*std::log(double(maximum)/minimum));
-        const Count step=filter.activityZoom==0?minimum:std::clamp(Count(std::ceil(interpolated/3600-1e-9))*3600,minimum,maximum);
-        out->activityBucketSeconds=step;
-        const Count origin=QDateTime::fromSecsSinceEpoch(filter.start).toLocalTime().date().startOfDay().toSecsSinceEpoch();
-        std::map<Count,Count> buckets;
-        for(const auto& [minute,count]:activeMinutes){
-            const Count bucket=step>=span?filter.start:origin+((minute-origin)/step)*step;
-            buckets[bucket]+=count;
+        const Count span = std::max<Count>(1, filter.end - filter.start);
+        const Count minimum =
+            span <= 25 * 3600   ? 3600
+            : span <= 8 * 86400 ? 43200
+            : span <= 32 * 86400
+                ? 86400
+                : ((span + 31 * 86400LL - 1) / (31 * 86400LL)) * 86400;
+        const Count maximum = std::max(minimum, ((span + 3599) / 3600) * 3600);
+        const double fraction = std::clamp(filter.activityZoom, 0, 100) / 100.0;
+        const double interpolated =
+            std::exp(std::log(double(minimum)) +
+                     fraction * std::log(double(maximum) / minimum));
+        const Count step =
+            filter.activityZoom == 0
+                ? minimum
+                : std::clamp(Count(std::ceil(interpolated / 3600 - 1e-9)) *
+                                 3600,
+                             minimum, maximum);
+        out->activityBucketSeconds = step;
+        const Count origin = QDateTime::fromSecsSinceEpoch(filter.start)
+                                 .toLocalTime()
+                                 .date()
+                                 .startOfDay()
+                                 .toSecsSinceEpoch();
+        std::map<Count, Count> buckets;
+        for (const auto &[minute, count] : activeMinutes) {
+            const Count bucket =
+                step >= span ? filter.start
+                             : origin + ((minute - origin) / step) * step;
+            buckets[bucket] += count;
         }
-        for(const auto& [bucket,count]:buckets)
-            out->hours.push_back({std::max(bucket,filter.start),step>=span?filter.end:std::min(bucket+step,filter.end),count});
+        for (const auto &[bucket, count] : buckets)
+            out->hours.push_back({std::max(bucket, filter.start),
+                                  step >= span
+                                      ? filter.end
+                                      : std::min(bucket + step, filter.end),
+                                  count});
         for (auto &[id, count] : software) {
             auto it = apps.find(id);
             out->software.push_back(
@@ -181,8 +212,14 @@ Engine::Engine(QString root, int interval, QObject *parent)
     : QObject(parent), root_(std::move(root)) {
     status_.interval = std::clamp(interval, 1, 3600);
     QFile stamp(root_ + "/config/last-save.json");
-    if(QFile::exists(root_ + "/data/whatinput.sqlite3") && stamp.open(QIODevice::ReadOnly))
-        status_.lastCommit = std::max<Count>(0,QJsonDocument::fromJson(stamp.readAll()).object().value("savedAtUtc").toVariant().toLongLong());
+    if (QFile::exists(root_ + "/data/whatinput.sqlite3") &&
+        stamp.open(QIODevice::ReadOnly))
+        status_.lastCommit =
+            std::max<Count>(0, QJsonDocument::fromJson(stamp.readAll())
+                                   .object()
+                                   .value("savedAtUtc")
+                                   .toVariant()
+                                   .toLongLong());
     qRegisterMetaType<std::shared_ptr<const wi::ViewResult>>();
 }
 Engine::~Engine() {
@@ -241,9 +278,13 @@ void Engine::refresh() {
         wake_.notify_one();
     }
 }
-void Engine::setActivityZoom(int zoom){
-    std::lock_guard lock(mutex_);filter_.activityZoom=std::clamp(zoom,0,100);
-    if(watching_){refreshRequested_=true;wake_.notify_one();}
+void Engine::setActivityZoom(int zoom) {
+    std::lock_guard lock(mutex_);
+    filter_.activityZoom = std::clamp(zoom, 0, 100);
+    if (watching_) {
+        refreshRequested_ = true;
+        wake_.notify_one();
+    }
 }
 void Engine::setInterval(int seconds) {
     std::lock_guard lock(mutex_);
@@ -295,13 +336,18 @@ void Engine::log(const QString &message) {
                     message + "\n")
                        .toUtf8());
 }
-void Engine::rememberSave(){
-    const auto saved=nowSecond();
-    {std::lock_guard lock(mutex_);status_.lastCommit=saved;}
-    QSaveFile file(root_+"/config/last-save.json");
-    const auto data=QJsonDocument(QJsonObject{{"savedAtUtc",double(saved)}}).toJson();
-    if(!file.open(QIODevice::WriteOnly)||file.write(data)!=data.size()||!file.commit())
-        log("统计已保存，但无法更新最近保存时间文件："+file.errorString());
+void Engine::rememberSave() {
+    const auto saved = nowSecond();
+    {
+        std::lock_guard lock(mutex_);
+        status_.lastCommit = saved;
+    }
+    QSaveFile file(root_ + "/config/last-save.json");
+    const auto data =
+        QJsonDocument(QJsonObject{{"savedAtUtc", double(saved)}}).toJson();
+    if (!file.open(QIODevice::WriteOnly) || file.write(data) != data.size() ||
+        !file.commit())
+        log("统计已保存，但无法更新最近保存时间文件：" + file.errorString());
 }
 void Engine::run() {
     using Clock = std::chrono::steady_clock;
@@ -480,8 +526,11 @@ void Engine::run() {
             watching = watching_;
             viewRequest = request_;
             viewFilter = filter_;
-            rebuild = watching_ && (viewRequested_ || !cache.valid ||
-                cache.todayStart != QDate::currentDate().startOfDay().toSecsSinceEpoch());
+            rebuild =
+                watching_ &&
+                (viewRequested_ || !cache.valid ||
+                 cache.todayStart !=
+                     QDate::currentDate().startOfDay().toSecsSinceEpoch());
             viewRequested_ = false;
             if (rebuild) {
                 snapshot = active_;
@@ -498,15 +547,39 @@ void Engine::run() {
                 try {
                     open();
                     cache = ViewCache{};
-                    if(viewFilter.start==0&&viewFilter.end==INT64_MAX){
-                        Count first=nowSecond(),last=first;bool found=false;
-                        Query extent(db->handle(),"SELECT MIN(second_utc),MAX(second_utc) FROM counts");
-                        if(extent.next()&&sqlite3_column_type(extent.s,0)!=SQLITE_NULL){first=sqlite3_column_int64(extent.s,0);last=sqlite3_column_int64(extent.s,1);found=true;}
-                        for(const auto* buffer:{&pending,&snapshot})for(const auto& [key,entry]:*buffer){
-                            if(!found){first=last=key.second;found=true;}else{first=std::min(first,key.second);last=std::max(last,key.second);}
+                    if (viewFilter.start == 0 && viewFilter.end == INT64_MAX) {
+                        Count first = nowSecond(), last = first;
+                        bool found = false;
+                        Query extent(db->handle(),
+                                     "SELECT MIN(second_utc),MAX(second_utc) "
+                                     "FROM counts");
+                        if (extent.next() &&
+                            sqlite3_column_type(extent.s, 0) != SQLITE_NULL) {
+                            first = sqlite3_column_int64(extent.s, 0);
+                            last = sqlite3_column_int64(extent.s, 1);
+                            found = true;
                         }
-                        viewFilter.start=QDateTime::fromSecsSinceEpoch(first).toLocalTime().date().startOfDay().toSecsSinceEpoch();
-                        viewFilter.end=QDateTime::fromSecsSinceEpoch(last).toLocalTime().date().addDays(1).startOfDay().toSecsSinceEpoch();
+                        for (const auto *buffer : {&pending, &snapshot})
+                            for (const auto &[key, entry] : *buffer) {
+                                if (!found) {
+                                    first = last = key.second;
+                                    found = true;
+                                } else {
+                                    first = std::min(first, key.second);
+                                    last = std::max(last, key.second);
+                                }
+                            }
+                        viewFilter.start = QDateTime::fromSecsSinceEpoch(first)
+                                               .toLocalTime()
+                                               .date()
+                                               .startOfDay()
+                                               .toSecsSinceEpoch();
+                        viewFilter.end = QDateTime::fromSecsSinceEpoch(last)
+                                             .toLocalTime()
+                                             .date()
+                                             .addDays(1)
+                                             .startOfDay()
+                                             .toSecsSinceEpoch();
                     }
                     cache.filter = viewFilter;
                     cacheRequest = viewRequest;
@@ -529,8 +602,9 @@ void Engine::run() {
                     result->error = QString::fromUtf8(e.what());
                     emit viewReady(result);
                 }
-            } else if (!snapshot.empty() || cache.filter.activityZoom!=viewFilter.activityZoom) {
-                cache.filter.activityZoom=viewFilter.activityZoom;
+            } else if (!snapshot.empty() ||
+                       cache.filter.activityZoom != viewFilter.activityZoom) {
+                cache.filter.activityZoom = viewFilter.activityZoom;
                 for (auto &[k, e] : snapshot)
                     cache.add(e);
                 emit viewReady(cache.result(cacheRequest));

@@ -1,6 +1,6 @@
 #pragma once
-#include "engine.h"
 #include "application_labels.h"
+#include "engine.h"
 #include <QAbstractTableModel>
 #include <QHash>
 #include <QIcon>
@@ -44,16 +44,16 @@ class StatsWindow : public QMainWindow {
     QStackedWidget *pages_;
     QComboBox *appFilter_, *deviceFilter_, *softwareDeviceFilter_;
     QComboBox *activityAppFilter_, *activityDeviceFilter_, *period_;
-    QComboBox* keyboardAppFilter_;
+    QComboBox *keyboardAppFilter_;
     QDateTimeEdit *rangeStart_, *rangeEnd_;
     QWidget *timePanel_, *activityPanel_, *formula_, *dashboard_;
     QWidget *cardsPanel_, *keyboardPanel_;
-    KeyboardHeatmap* keyboardHeatmap_;
-    ActivityChart* chart_;
-    QSlider* activityZoom_;
+    KeyboardHeatmap *keyboardHeatmap_;
+    ActivityChart *chart_;
+    QSlider *activityZoom_;
     QLabel *todayMouse_, *todayKeyboard_, *todayGamepad_, *todayTotal_;
     QTimer timer_;
-    int nameRefreshTicks_=0;
+    int nameRefreshTicks_ = 0;
     QHash<QString, QIcon> applicationIcons_;
     QHash<QString, qint64> iconRetryAt_;
     QIcon applicationIcon(const QString &id);

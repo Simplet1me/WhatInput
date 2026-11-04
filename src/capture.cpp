@@ -133,29 +133,52 @@ static std::wstring executableName(DWORD pid) {
     std::transform(name.begin(), name.end(), name.begin(), towlower);
     return name;
 }
-static std::pair<std::string,std::string> hostedApplication(HWND root,DWORD hostPid){
-    struct Search {DWORD host;LONGLONG area=0;std::pair<std::string,std::string> app;};
+static std::pair<std::string, std::string> hostedApplication(HWND root,
+                                                             DWORD hostPid) {
+    struct Search {
+        DWORD host;
+        LONGLONG area = 0;
+        std::pair<std::string, std::string> app;
+    };
     Search search{hostPid};
-    EnumChildWindows(root,[](HWND child,LPARAM context)->BOOL{
-        if(!IsWindowVisible(child))return TRUE;
-        auto& state=*reinterpret_cast<Search*>(context);
-        DWORD pid=0;GetWindowThreadProcessId(child,&pid);
-        if(!pid||pid==state.host)return TRUE;
-        RECT rectangle{};if(!GetWindowRect(child,&rectangle))return TRUE;
-        const auto area=LONGLONG(rectangle.right-rectangle.left)*(rectangle.bottom-rectangle.top);
-        if(area<=state.area)return TRUE;
-        HANDLE process=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,FALSE,pid);
-        if(!process)return TRUE;
-        wchar_t path[32768];DWORD length=32768;
-        if(QueryFullProcessImageNameW(process,0,path,&length)){
-            std::wstring value(path,length);std::transform(value.begin(),value.end(),value.begin(),towlower);
-            auto name=fs::path(value).filename().wstring();
-            if(name!=L"runtimebroker.exe"&&name!=L"applicationframehost.exe"){
-                state.area=area;state.app={utf8(value),utf8(name)};
+    EnumChildWindows(
+        root,
+        [](HWND child, LPARAM context) -> BOOL {
+            if (!IsWindowVisible(child))
+                return TRUE;
+            auto &state = *reinterpret_cast<Search *>(context);
+            DWORD pid = 0;
+            GetWindowThreadProcessId(child, &pid);
+            if (!pid || pid == state.host)
+                return TRUE;
+            RECT rectangle{};
+            if (!GetWindowRect(child, &rectangle))
+                return TRUE;
+            const auto area = LONGLONG(rectangle.right - rectangle.left) *
+                              (rectangle.bottom - rectangle.top);
+            if (area <= state.area)
+                return TRUE;
+            HANDLE process =
+                OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+            if (!process)
+                return TRUE;
+            wchar_t path[32768];
+            DWORD length = 32768;
+            if (QueryFullProcessImageNameW(process, 0, path, &length)) {
+                std::wstring value(path, length);
+                std::transform(value.begin(), value.end(), value.begin(),
+                               towlower);
+                auto name = fs::path(value).filename().wstring();
+                if (name != L"runtimebroker.exe" &&
+                    name != L"applicationframehost.exe") {
+                    state.area = area;
+                    state.app = {utf8(value), utf8(name)};
+                }
             }
-        }
-        CloseHandle(process);return TRUE;
-    },reinterpret_cast<LPARAM>(&search));
+            CloseHandle(process);
+            return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&search));
     return search.app;
 }
 static std::pair<std::string, std::string> application(bool mouse) {
@@ -198,9 +221,11 @@ static std::pair<std::string, std::string> application(bool mouse) {
             else
                 a = {utf8(v),
                      name == L"explorer.exe" ? "文件资源管理器" : utf8(name)};
-            if(name==L"runtimebroker.exe"||name==L"applicationframehost.exe"){
-                auto content=hostedApplication(h,pid);
-                if(!content.first.empty())a=std::move(content);
+            if (name == L"runtimebroker.exe" ||
+                name == L"applicationframehost.exe") {
+                auto content = hostedApplication(h, pid);
+                if (!content.first.empty())
+                    a = std::move(content);
             }
         }
         CloseHandle(p);
@@ -246,8 +271,8 @@ struct Device {
 static std::map<HANDLE, Device> devices;
 // All physical mice share one rolling 1000 ms wheel-count interval.
 // Keep the first accepted direction; suppressed deltas are never queued.
-static ULONGLONG lastWheelPressAt=0;
-static bool wheelPressSeen=false;
+static ULONGLONG lastWheelPressAt = 0;
+static bool wheelPressSeen = false;
 // Handles are ephemeral and used only for independent edge/wheel state.
 static Device &device(HANDLE handle, bool mouse) {
     auto i = devices.find(handle);
@@ -346,10 +371,13 @@ static void rawInput(HRAWINPUT h) {
             if (m.usButtonFlags & (a ? RI_MOUSE_HWHEEL : RI_MOUSE_WHEEL)) {
                 int delta = static_cast<SHORT>(m.usButtonData);
                 int count = d.state.scroll(a, delta);
-                if(count<=0||sleeping||stopping)continue;
-                const auto now=GetTickCount64();
-                if(wheelPressSeen&&now-lastWheelPressAt<1000)continue;
-                lastWheelPressAt=now;wheelPressSeen=true;
+                if (count <= 0 || sleeping || stopping)
+                    continue;
+                const auto now = GetTickCount64();
+                if (wheelPressSeen && now - lastWheelPressAt < 1000)
+                    continue;
+                lastWheelPressAt = now;
+                wheelPressSeen = true;
                 auto c = "mouse:wheel:" + std::to_string(a) + ":" +
                          (delta < 0 ? "-" : "+");
                 const char *label = a ? (delta < 0 ? "滚轮向左" : "滚轮向右")
@@ -585,7 +613,8 @@ bool startCapture(Engine &engine, std::function<void()> showWindow,
     stopping = false;
     sleeping = false;
     devices.clear();
-    lastWheelPressAt=0;wheelPressSeen=false;
+    lastWheelPressAt = 0;
+    wheelPressSeen = false;
     diagnostics =
         QCoreApplication::arguments().contains("--capture-diagnostics");
     diagnosticCounts.clear();
