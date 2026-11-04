@@ -1,13 +1,7 @@
 #include <windows.h>
 #include "application_labels.h"
-#include <QDateTime>
 #include <QDir>
-#include <QFile>
 #include <QFileInfo>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QSaveFile>
-#include <utility>
 
 namespace {
 QString identity(DWORD pid){
@@ -20,16 +14,8 @@ QString identity(DWORD pid){
 }
 QString key(QString value){return QDir::fromNativeSeparators(value).toCaseFolded();}
 }
-ApplicationLabels::ApplicationLabels(QString root):filename_(std::move(root)+"/cache/app-names.json"){
-    QFile file(filename_);
-    if(file.open(QIODevice::ReadOnly)){
-        const auto names=QJsonDocument::fromJson(file.readAll()).object();
-        for(auto it=names.begin();it!=names.end();++it)
-            if(it.value().isString()&&!it.value().toString().trimmed().isEmpty())cached_[key(it.key())]=it.value().toString();
-    }
-}
-void ApplicationLabels::scan(){
-    live_.clear();scannedAt_=QDateTime::currentMSecsSinceEpoch();
+void ApplicationLabels::refresh(){
+    live_.clear();
     EnumWindows([](HWND window,LPARAM data)->BOOL{
         auto& names=*reinterpret_cast<QHash<QString,QString>*>(data);
         if(!IsWindowVisible(window)||GetWindow(window,GW_OWNER)||
@@ -59,18 +45,12 @@ void ApplicationLabels::scan(){
         return TRUE;
     },reinterpret_cast<LPARAM>(&live_));
 }
-QString ApplicationLabels::label(const QString& value,const QString& fallback){
+QString ApplicationLabels::label(const QString& value,const QString& fallback) const{
     if(value=="system"||value=="unknown")return fallback;
     const auto id=key(value);
-    if(auto it=cached_.constFind(id);it!=cached_.cend())return it.value();
-    if(!scannedAt_||QDateTime::currentMSecsSinceEpoch()-scannedAt_>=5000)scan();
     const auto title=live_.value(id);
-    if(title.isEmpty())return fallback;
-    cached_.insert(id,title);save();return title;
-}
-void ApplicationLabels::save()const{
-    if(!QDir().mkpath(QFileInfo(filename_).absolutePath()))return;
-    QJsonObject names;for(auto it=cached_.cbegin();it!=cached_.cend();++it)names.insert(it.key(),it.value());
-    QSaveFile file(filename_);const auto bytes=QJsonDocument(names).toJson();
-    if(file.open(QIODevice::WriteOnly)&&file.write(bytes)==bytes.size())file.commit();
+    if(!title.isEmpty())return title;
+    if(id.startsWith("exe-name:"))return id.mid(9);
+    const auto name=QFileInfo(id).fileName();
+    return name.isEmpty()?fallback:name;
 }

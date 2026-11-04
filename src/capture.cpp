@@ -244,6 +244,10 @@ struct Device {
     wi::State state;
 };
 static std::map<HANDLE, Device> devices;
+// All physical mice share one rolling 1000 ms wheel-count interval.
+// Keep the first accepted direction; suppressed deltas are never queued.
+static ULONGLONG lastWheelPressAt=0;
+static bool wheelPressSeen=false;
 // Handles are ephemeral and used only for independent edge/wheel state.
 static Device &device(HANDLE handle, bool mouse) {
     auto i = devices.find(handle);
@@ -342,11 +346,15 @@ static void rawInput(HRAWINPUT h) {
             if (m.usButtonFlags & (a ? RI_MOUSE_HWHEEL : RI_MOUSE_WHEEL)) {
                 int delta = static_cast<SHORT>(m.usButtonData);
                 int count = d.state.scroll(a, delta);
+                if(count<=0||sleeping||stopping)continue;
+                const auto now=GetTickCount64();
+                if(wheelPressSeen&&now-lastWheelPressAt<1000)continue;
+                lastWheelPressAt=now;wheelPressSeen=true;
                 auto c = "mouse:wheel:" + std::to_string(a) + ":" +
                          (delta < 0 ? "-" : "+");
                 const char *label = a ? (delta < 0 ? "滚轮向左" : "滚轮向右")
                                       : (delta < 0 ? "滚轮向下" : "滚轮向上");
-                add(d.id, d.type, d.name, c, label, count, true);
+                add(d.id, d.type, d.name, c, label, 1, true);
             }
     }
 }
@@ -577,6 +585,7 @@ bool startCapture(Engine &engine, std::function<void()> showWindow,
     stopping = false;
     sleeping = false;
     devices.clear();
+    lastWheelPressAt=0;wheelPressSeen=false;
     diagnostics =
         QCoreApplication::arguments().contains("--capture-diagnostics");
     diagnosticCounts.clear();

@@ -5,12 +5,9 @@
 // Display labels only; executable identities and persisted counts are unchanged.
 class ApplicationLabels {
 public:
-    explicit ApplicationLabels(QString root);
-    QString label(const QString& identity,const QString& fallback);
+    void refresh();
+    QString label(const QString& identity,const QString& fallback) const;
 private:
-    QString filename_;
-    QHash<QString,QString> cached_, live_;
-    qint64 scannedAt_=0;
-    void scan();
-    void save()const;
+    // One live UI refresh snapshot, discarded on the next refresh. Never saved.
+    QHash<QString,QString> live_;
 };

@@ -181,7 +181,7 @@ class ActivityChart : public QWidget {
 };
 
 StatsWindow::StatsWindow(wi::Engine &engine, QString root, QWidget *parent)
-    : QMainWindow(parent), engine_(engine), root_(std::move(root)), applicationLabels_(root_) {
+    : QMainWindow(parent), engine_(engine), root_(std::move(root)) {
     setWindowTitle("WhatInput · 本地输入统计");
     resize(1440, 820);
     setMinimumSize(1180, 620);
@@ -467,6 +467,7 @@ QScrollArea{background:#101922;border:0;}
     timer_.setInterval(100);
     connect(&timer_, &QTimer::timeout, this, [this] {
         if (isVisible() && !isMinimized()) {
+            if(++nameRefreshTicks_>=10){nameRefreshTicks_=0;refreshApplicationNames();}
             if (pages_->currentIndex() == 0){
                 if(queryDate_!=QDate::currentDate()){
                     if(historyMode_&&period_->currentIndex()!=5)selectPeriod();
@@ -523,6 +524,7 @@ void StatsWindow::query() {
     if(selected.start>=selected.end){message_->setText("起始时间必须早于结束时间，区间含起点、不含终点。");message_->show();return;}
     message_->hide();
     if (isVisible() && !isMinimized()) {
+        refreshApplicationNames();
         appliedFilter_=selected;
         model_->replace(wi::ViewResult{});
         engine_.watch(selected, ++request_);
@@ -546,7 +548,7 @@ void StatsWindow::receive(std::shared_ptr<const wi::ViewResult> result) {
         }}
         if(changed){
             QSignalBlocker blocker(combo);const auto oldName=combo->currentText();combo->clear();combo->addItem("全部软件","");
-            for(const auto& [id,name]:result->applications){auto key=QString::fromStdString(id);combo->addItem(applicationIcon(key),applicationLabels_.label(key,QString::fromStdString(name)),key);combo->setItemData(combo->count()-1,key,Qt::ToolTipRole);}
+            for(const auto& [id,name]:result->applications){auto key=QString::fromStdString(id);combo->addItem(applicationIcon(key),applicationLabels_.label(key,QString::fromStdString(name)),key);combo->setItemData(combo->count()-1,key,Qt::ToolTipRole);combo->setItemData(combo->count()-1,QString::fromStdString(name),Qt::UserRole+1);}
             int index=combo->findData(selected);
             if(index<0&&!selected.isEmpty()){combo->addItem(oldName,selected);index=combo->count()-1;}
             combo->setCurrentIndex(std::max(0,index));
@@ -568,6 +570,7 @@ void StatsWindow::receive(std::shared_ptr<const wi::ViewResult> result) {
         auto item = new QTableWidgetItem(applicationIcon(id),
                                          label);
         item->setToolTip(label + "\n" + id);
+        item->setData(Qt::UserRole,id);item->setData(Qt::UserRole+1,QString::fromStdString(entry.name));
         software_->setItem(i, 0, item);
         auto value = new QTableWidgetItem(number(entry.count));
         value->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
@@ -589,6 +592,22 @@ void StatsWindow::receive(std::shared_ptr<const wi::ViewResult> result) {
         const auto position=activePeriods_->verticalScrollBar()->value();periodModel_->replace(result->activePeriods);activePeriods_->verticalScrollBar()->setValue(position);
     }
     updateStatus();
+}
+void StatsWindow::refreshApplicationNames(){
+    applicationLabels_.refresh();
+    for(auto combo:{appFilter_,activityAppFilter_}){
+        QSignalBlocker blocker(combo);
+        for(int i=1;i<combo->count();++i){
+            const auto title=applicationLabels_.label(combo->itemData(i).toString(),combo->itemData(i,Qt::UserRole+1).toString());
+            if(combo->itemText(i)!=title)combo->setItemText(i,title);
+        }
+    }
+    for(int i=0;i<software_->rowCount();++i){
+        auto item=software_->item(i,0);if(!item||item->data(Qt::UserRole).toString().isEmpty())continue;
+        const auto id=item->data(Qt::UserRole).toString();
+        const auto title=applicationLabels_.label(id,item->data(Qt::UserRole+1).toString());
+        if(item->text()!=title){item->setText(title);item->setToolTip(title+"\n"+id);}
+    }
 }
 QIcon StatsWindow::applicationIcon(const QString &id) {
     if (auto it = applicationIcons_.constFind(id);

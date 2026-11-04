@@ -47,6 +47,11 @@ if($oldVersion -ne '3'){
     Write-Output 'Old database removed for schema version 3 (no migration).'
 }
 
+# Application titles are now live-only. Remove the obsolete generated name cache.
+$oldNameCache=Join-Path $release 'cache/app-names.json'
+Assert-Within $oldNameCache $release
+if(Test-Path -LiteralPath $oldNameCache){Remove-Item -LiteralPath $oldNameCache -Force}
+
 # All runtime artifacts are generated; keep application data/config/logs/exports.
 $generatedDirs=@('platforms','styles','generic','iconengines','imageformats','networkinformation','position','qml','qmltooling','resources','tls','translations')
 foreach($name in $generatedDirs){

@@ -52,6 +52,7 @@ class StatsWindow : public QMainWindow {
     QSlider* activityZoom_;
     QLabel *todayMouse_, *todayKeyboard_, *todayGamepad_, *todayTotal_;
     QTimer timer_;
+    int nameRefreshTicks_=0;
     QHash<QString, QIcon> applicationIcons_;
     QHash<QString, qint64> iconRetryAt_;
     QIcon applicationIcon(const QString &id);
@@ -67,4 +68,5 @@ class StatsWindow : public QMainWindow {
     void receive(std::shared_ptr<const wi::ViewResult> result);
     void updateStatus();
     void settings();
+    void refreshApplicationNames();
 };
