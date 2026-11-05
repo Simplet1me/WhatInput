@@ -1,4 +1,5 @@
 #include "engine/engine.h"
+#include "engine/activity_time.h"
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
@@ -70,6 +71,7 @@ struct ViewCache {
     ViewFilter filter;
     std::map<std::pair<std::string, std::string>, RankedControl> controls;
     std::map<Count, Count> activeMinutes;
+    std::map<Count,std::array<Count,3>> activityDevices;
     Count activityTotal = 0;
     std::map<std::string, Count> software;
     std::map<std::string, Count> movement;
@@ -123,6 +125,8 @@ struct ViewCache {
             const auto local =
                 QDateTime::fromSecsSinceEpoch(e.key.second).toLocalTime();
             activeMinutes[e.key.second - local.time().second()] += e.count;
+            const int device=e.key.type=="mouse"?0:e.key.type=="keyboard"?1:2;
+            activityDevices[e.key.second-local.time().second()][device]+=e.count;
             activityTotal += e.count;
         }
         if (!matches(e.key, filter))
@@ -176,43 +180,16 @@ struct ViewCache {
                                  : std::tie(a.type, a.control) <
                                        std::tie(b.type, b.control);
                   });
-        const Count span = std::max<Count>(1, filter.end - filter.start);
-        const Count minimum =
-            span <= 25 * 3600   ? 3600
-            : span <= 8 * 86400 ? 43200
-            : span <= 32 * 86400
-                ? 86400
-                : ((span + 31 * 86400LL - 1) / (31 * 86400LL)) * 86400;
-        const Count maximum = std::max(minimum, ((span + 3599) / 3600) * 3600);
-        const double fraction = std::clamp(filter.activityZoom, 0, 100) / 100.0;
-        const double interpolated =
-            std::exp(std::log(double(minimum)) +
-                     fraction * std::log(double(maximum) / minimum));
-        const Count step =
-            filter.activityZoom == 0
-                ? minimum
-                : std::clamp(Count(std::ceil(interpolated / 3600 - 1e-9)) *
-                                 3600,
-                             minimum, maximum);
-        out->activityBucketSeconds = step;
-        const Count origin = QDateTime::fromSecsSinceEpoch(filter.start)
-                                 .toLocalTime()
-                                 .date()
-                                 .startOfDay()
-                                 .toSecsSinceEpoch();
-        std::map<Count, Count> buckets;
-        for (const auto &[minute, count] : activeMinutes) {
-            const Count bucket =
-                step >= span ? filter.start
-                             : origin + ((minute - origin) / step) * step;
-            buckets[bucket] += count;
+        out->activityGrouping=filter.activityGrouping;
+        std::map<Count,HourCount> buckets;
+        for(const auto& [minute,devices]:activityDevices){
+            const auto boundary=activityFloor(QDateTime::fromSecsSinceEpoch(minute).toLocalTime(),filter.activityGrouping);
+            const auto end=activityNext(boundary,filter.activityGrouping).toSecsSinceEpoch();
+            auto& bucket=buckets[boundary.toSecsSinceEpoch()];
+            bucket.start=std::max(boundary.toSecsSinceEpoch(),filter.start);bucket.end=std::min(end,filter.end);
+            for(int i=0;i<3;++i){bucket.series[i+1]+=devices[i];bucket.series[0]+=devices[i];bucket.count+=devices[i];}
         }
-        for (const auto &[bucket, count] : buckets)
-            out->hours.push_back({std::max(bucket, filter.start),
-                                  step >= span
-                                      ? filter.end
-                                      : std::min(bucket + step, filter.end),
-                                  count});
+        for(const auto& [start,bucket]:buckets)out->hours.push_back(bucket);
         for (auto &[id, count] : software) {
             auto it = apps.find(id);
             out->software.push_back(
@@ -313,9 +290,9 @@ void Engine::refresh() {
         wake_.notify_one();
     }
 }
-void Engine::setActivityZoom(int zoom) {
+void Engine::setActivityGrouping(int grouping) {
     std::lock_guard lock(mutex_);
-    filter_.activityZoom = std::clamp(zoom, 0, 100);
+    filter_.activityGrouping = std::clamp(grouping, 0, 4);
     if (watching_) {
         refreshRequested_ = true;
         wake_.notify_one();
@@ -658,8 +635,8 @@ void Engine::run() {
                     emit viewReady(result);
                 }
             } else if (!snapshot.empty() ||
-                       cache.filter.activityZoom != viewFilter.activityZoom) {
-                cache.filter.activityZoom = viewFilter.activityZoom;
+                       cache.filter.activityGrouping != viewFilter.activityGrouping) {
+                cache.filter.activityGrouping = viewFilter.activityGrouping;
                 for (auto &[k, e] : snapshot)
                     cache.add(e);
                 emit viewReady(cache.result(cacheRequest));

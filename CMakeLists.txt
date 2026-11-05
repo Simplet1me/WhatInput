@@ -27,6 +27,7 @@ qt_add_executable(WhatInput WIN32
   src/ui/mouse/mouse_statistics.cpp src/ui/mouse/mouse_statistics.h
   src/ui/mouse/heatmap_renderer.cpp src/ui/mouse/heatmap_renderer.h
   src/ui/gamepad/gamepad_heatmap.cpp src/ui/gamepad/gamepad_heatmap.h
+  src/ui/history/activity_chart.cpp src/ui/history/activity_chart.h
   "${CMAKE_CURRENT_BINARY_DIR}/WhatInput.rc"
 )
 qt_add_resources(WhatInput application_icons PREFIX "/assets" BASE assets

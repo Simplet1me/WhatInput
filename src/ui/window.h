@@ -16,6 +16,7 @@ class QTableWidget;
 class QCloseEvent;
 class QShowEvent;
 class QStackedWidget;
+class QScrollArea;
 class QSlider;
 class RankModel;
 class ActivityChart;
@@ -34,6 +35,7 @@ class StatsWindow : public QMainWindow {
     void closeEvent(QCloseEvent *event) override;
     void showEvent(QShowEvent *event) override;
     void changeEvent(QEvent *event) override;
+    bool eventFilter(QObject* watched,QEvent* event) override;
 
   private:
     wi::Engine &engine_;
@@ -44,8 +46,9 @@ class StatsWindow : public QMainWindow {
     QTableWidget *software_;
     RankModel *model_;
     QStackedWidget *pages_;
+    QScrollArea* dashboardScroll_=nullptr;
     QComboBox *appFilter_, *deviceFilter_, *softwareDeviceFilter_;
-    QComboBox *activityAppFilter_, *activityDeviceFilter_, *period_;
+    QComboBox *activityAppFilter_, *period_;
     QComboBox *keyboardAppFilter_;
     QComboBox* mouseHeatmapMode_;
     QWidget* movementPanel_;
@@ -66,7 +69,7 @@ class StatsWindow : public QMainWindow {
     KeyboardHeatmap *keyboardHeatmap_;
     MouseStatistics* mouseStatistics_;
     ActivityChart *chart_;
-    QSlider *activityZoom_;
+    QComboBox* activityGrouping_;
     QLabel *todayMouse_, *todayKeyboard_, *todayGamepad_, *todayTotal_;
     QTimer timer_;
     int nameRefreshTicks_ = 0;
@@ -91,4 +94,5 @@ class StatsWindow : public QMainWindow {
     void updateStatus();
     void settings();
     void refreshApplicationNames();
+    void updateDashboardLayout();
 };

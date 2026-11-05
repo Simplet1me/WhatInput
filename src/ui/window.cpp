@@ -2,6 +2,9 @@
 #include "ui/keyboard/keyboard_heatmap.h"
 #include "ui/mouse/mouse_statistics.h"
 #include "ui/gamepad/gamepad_heatmap.h"
+#include "ui/history/activity_chart.h"
+#include <QToolButton>
+#include <QPixmap>
 #include <QApplication>
 #include <QCloseEvent>
 #include <QComboBox>
@@ -113,88 +116,6 @@ class RankModel : public QAbstractTableModel {
     }
 };
 
-class ActivityChart : public QWidget {
-  public:
-    std::vector<wi::HourCount> bars;
-    wi::Count start = 0, end = 1;
-    bool daily = false;
-    explicit ActivityChart(QWidget *parent = nullptr) : QWidget(parent) {
-        setMouseTracking(true);
-        setMinimumHeight(210);
-    }
-    void setData(const wi::ViewResult &result) {
-        start = result.rangeStart;
-        end = result.rangeEnd;
-        daily = result.activityBucketSeconds >= 86400;
-        bars = result.hours;
-        const auto step = std::max<wi::Count>(1, result.activityBucketSeconds);
-        const auto barCount = (end - start + step - 1) / step;
-        setMinimumWidth(
-            int(std::clamp<wi::Count>(barCount * 90 + 50, 700, 24000)));
-        update();
-    }
-
-  protected:
-    QRectF barRect(const wi::HourCount &bar, wi::Count maximum) const {
-        const double span = double(std::max<wi::Count>(1, end - start));
-        const double left = 40 + (bar.start - start) / span * (width() - 48);
-        const double size =
-            std::max(2.0, (bar.end - bar.start) / span * (width() - 48) - 5);
-        const double height = std::max(
-            2.0, double(bar.count) / double(maximum) * (this->height() - 62));
-        return {left, this->height() - 40 - height, size, height};
-    }
-    void paintEvent(QPaintEvent *event) override {
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::Antialiasing);
-        painter.fillRect(rect(), QColor("#17232e"));
-        if (bars.empty()) {
-            painter.setPen(QColor("#91a7b7"));
-            painter.drawText(rect(), Qt::AlignCenter, "此范围内暂无活动");
-            return;
-        }
-        wi::Count maximum = 1;
-        for (const auto &bar : bars)
-            maximum = std::max(maximum, bar.count);
-        painter.setPen(QColor("#91a7b7"));
-        painter.drawText(8, 18, number(maximum));
-        int lastLabel = -1000;
-        for (const auto &bar : bars) {
-            const auto area = barRect(bar, maximum);
-            if (!area.intersects(event->rect()))
-                continue;
-            painter.setPen(Qt::NoPen);
-            painter.setBrush(QColor("#86cdae"));
-            painter.drawRoundedRect(area, 3, 3);
-            if (area.left() - lastLabel >= 72) {
-                painter.setPen(QColor("#91a7b7"));
-                painter.drawText(
-                    QRectF(area.left() - 10, height() - 36, 90, 34),
-                    Qt::AlignLeft,
-                    QDateTime::fromSecsSinceEpoch(bar.start)
-                        .toLocalTime()
-                        .toString(daily ? "MM-dd" : "MM-dd\nHH:mm"));
-                lastLabel = int(area.left());
-            }
-        }
-    }
-    void mouseMoveEvent(QMouseEvent *event) override {
-        wi::Count maximum = 1;
-        for (const auto &bar : bars)
-            maximum = std::max(maximum, bar.count);
-        for (const auto &bar : bars)
-            if (barRect(bar, maximum).contains(event->position())) {
-                QToolTip::showText(event->globalPosition().toPoint(),
-                                   datetime(bar.start) + " → " +
-                                       datetime(bar.end) + "\n" +
-                                       number(bar.count) + " 次输入",
-                                   this);
-                return;
-            }
-        QToolTip::hideText();
-    }
-};
-
 StatsWindow::StatsWindow(wi::Engine &engine, QString root, QWidget *parent)
     : QMainWindow(parent), engine_(engine), root_(std::move(root)) {
     setWindowTitle("WhatInput · 本地输入统计");
@@ -266,8 +187,10 @@ StatsWindow::StatsWindow(wi::Engine &engine, QString root, QWidget *parent)
     home->setAutoFillBackground(false);
     dashboard_ = home;
     auto homeLayout = new QVBoxLayout(home);
-    homeLayout->setContentsMargins(0, 0, 0, 0);
+    homeLayout->setContentsMargins(0, 0, 0, 16);
     homeLayout->setSpacing(20);
+    // Propagate the visible cards' combined minimum height to QScrollArea.
+    homeLayout->setSizeConstraint(QLayout::SetMinAndMaxSize);
     auto title = heading("首页", home);
     pageTitle_ = title;
     title->setObjectName("hero");
@@ -481,7 +404,6 @@ StatsWindow::StatsWindow(wi::Engine &engine, QString root, QWidget *parent)
     activityLayout->setContentsMargins(20, 16, 20, 16);
     auto activityHeader = new QHBoxLayout;
     activityHeader->addWidget(heading("时间活跃度", activityPanel_));
-    activityHeader->addStretch();
     activityAppFilter_ = new QComboBox(activityPanel_);
     activityAppFilter_->addItem("全部软件", "");
     activityAppFilter_->setIconSize(QSize(22, 22));
@@ -490,53 +412,35 @@ StatsWindow::StatsWindow(wi::Engine &engine, QString root, QWidget *parent)
         QComboBox::AdjustToMinimumContentsLengthWithIcon);
     activityAppFilter_->setMaximumWidth(240);
     activityAppFilter_->view()->setMinimumWidth(320);
-    activityDeviceFilter_ = new QComboBox(activityPanel_);
-    activityDeviceFilter_->addItem("全部设备", "");
-    activityDeviceFilter_->addItem("键盘", "keyboard");
-    activityDeviceFilter_->addItem("鼠标", "mouse");
-    activityDeviceFilter_->addItem("手柄", "gamepad");
     activityHeader->addWidget(activityAppFilter_);
-    activityHeader->addWidget(activityDeviceFilter_);
     activityLayout->addLayout(activityHeader);
     connect(activityAppFilter_, &QComboBox::currentIndexChanged, this,
             [this] { query(); });
-    connect(activityDeviceFilter_, &QComboBox::currentIndexChanged, this,
-            [this] { query(); });
-    auto zoomRow = new QHBoxLayout;
-    auto finer = new QPushButton("细化", activityPanel_);
-    auto overview = new QPushButton("概览", activityPanel_);
-    activityZoom_ = new QSlider(Qt::Horizontal, activityPanel_);
-    activityZoom_->setRange(0, 100);
-    activityZoom_->setValue(0);
-    activityZoom_->setAccessibleName("时间轴缩放：左侧细化，右侧概览");
-    zoomRow->addWidget(finer);
-    zoomRow->addWidget(activityZoom_, 1);
-    zoomRow->addWidget(overview);
-    activityLayout->addLayout(zoomRow);
-    connect(finer, &QPushButton::clicked, this,
-            [this] { activityZoom_->setValue(0); });
-    connect(overview, &QPushButton::clicked, this,
-            [this] { activityZoom_->setValue(100); });
-    connect(activityZoom_, &QSlider::valueChanged, this, [this](int value) {
-        if (historyMode_)
-            engine_.setActivityZoom(value);
-    });
+    activityGrouping_=new QComboBox(activityPanel_);
+    activityGrouping_->addItems({"按小时","按天","按周","按月","按年"});
+    activityGrouping_->setAccessibleName("时间活跃度分组");activityHeader->addWidget(activityGrouping_);
+    activityHeader->addStretch();
+    connect(activityGrouping_,&QComboBox::currentIndexChanged,this,[this](int grouping){if(historyMode_)engine_.setActivityGrouping(grouping);});
     chart_ = new ActivityChart(activityPanel_);
-    auto chartScroll = new QScrollArea(activityPanel_);
-    chartScroll->setObjectName("activityScroll");
-    chartScroll->viewport()->setObjectName("activityViewport");
-    chartScroll->setFrameShape(QFrame::NoFrame);
-    chartScroll->setWidgetResizable(true);
-    chartScroll->setWidget(chart_);
-    chartScroll->setMinimumHeight(235);
-    activityLayout->addWidget(chartScroll);
+    activityPanel_->setFixedHeight(560);
+    activityLayout->addWidget(chart_,1);
+    auto legend=new QHBoxLayout;legend->addStretch();
+    for(int series=0;series<4;++series){
+        auto button=new QToolButton(activityPanel_);button->setText(ActivityChart::seriesName(series));button->setCheckable(true);button->setChecked(true);button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        QPixmap swatch(14,14);swatch.fill(ActivityChart::seriesColor(series));button->setIcon(QIcon(swatch));button->setAccessibleName(ActivityChart::seriesName(series)+"柱显示开关");
+        button->setStyleSheet("QToolButton{color:#60717f;border:1px solid transparent;padding:6px 12px;border-radius:4px;}QToolButton:checked{color:#e4edf3;}QToolButton:hover{border-color:#637585;}");
+        connect(button,&QToolButton::toggled,this,[this,series](bool visible){chart_->setSeriesVisible(series,visible);});legend->addWidget(button);
+    }
+    legend->addStretch();activityLayout->addLayout(legend);
     activityPanel_->hide();
-    homeLayout->addWidget(activityPanel_);
+    homeLayout->insertWidget(homeLayout->indexOf(cardsPanel_),activityPanel_);
     auto dashboardScroll = new QScrollArea(pages_);
+    dashboardScroll_=dashboardScroll;
     dashboardScroll->viewport()->setObjectName("dashboardViewport");
     dashboardScroll->setFrameShape(QFrame::NoFrame);
     dashboardScroll->setWidgetResizable(true);
     dashboardScroll->setWidget(home);
+    dashboardScroll->viewport()->installEventFilter(this);
     home->setAutoFillBackground(false);
     pages_->addWidget(dashboardScroll);
     for (auto name : QStringList{"手柄统计"}) {
@@ -642,9 +546,9 @@ wi::ViewFilter StatsWindow::filter() const {
                 .toString()
                 .toStdString(),
             softwareDeviceFilter_->currentData().toString().toStdString(),
-            activityDeviceFilter_->currentData().toString().toStdString(),
+            std::string{},
             activityAppFilter_->currentData().toString().toStdString(),
-            activityZoom_->value()};
+            activityGrouping_->currentIndex()};
     selected.mouseDetails=mouseMode_;
     if(movementMode_){
         selected.start-=selected.start%60;
@@ -670,6 +574,7 @@ void StatsWindow::selectPage(int index) {
                         : mouseMode_?"鼠标统计":movementMode_?"鼠标移动统计":gamepadMode_?"手柄统计":combinationMode_?"组合按键统计":"首页");
     formula_->setVisible(index == 0);
     cardsPanel_->setVisible(!keyboardMode_&&!mouseMode_&&!movementMode_&&!gamepadMode_&&!combinationMode_);
+    cardsPanel_->setMinimumHeight(historyMode_ ? 560 : 0);
     combinationPanel_->setVisible(combinationMode_);
     gamepadPanel_->setVisible(gamepadMode_);
     movementPanel_->setVisible(movementMode_);
@@ -678,7 +583,7 @@ void StatsWindow::selectPage(int index) {
     mouseHeatmapMode_->setVisible(mouseMode_);
     timePanel_->setVisible(historyMode_ || keyboardMode_ || mouseMode_ || movementMode_ || gamepadMode_ || combinationMode_);
     activityPanel_->setVisible(historyMode_);
-    dashboard_->setMinimumHeight(historyMode_ ? 860 : 0);
+    updateDashboardLayout();
     message_->hide();
     if(historyMode_||keyboardMode_||mouseMode_||movementMode_||gamepadMode_||combinationMode_){
         const auto selection=timeSelections_[index];QSignalBlocker blocker(period_);period_->setCurrentIndex(selection.period);
@@ -859,11 +764,6 @@ void StatsWindow::receive(std::shared_ptr<const wi::ViewResult> result) {
         message_->hide();
     if (historyMode_) {
         chart_->setData(*result);
-        const auto step = result->activityBucketSeconds;
-        activityZoom_->setToolTip(
-            "每格 " + (step % 86400 == 0
-                           ? QString::number(step / 86400) + " 天"
-                           : QString::number(step / 3600) + " 小时"));
         if (period_->currentIndex() == 4) {
             rangeStart_->setDateTime(
                 QDateTime::fromSecsSinceEpoch(result->rangeStart)
@@ -1013,6 +913,19 @@ void StatsWindow::open() {
     activateWindow();
     timer_.start();
     query();
+}
+void StatsWindow::updateDashboardLayout(){
+    if(!dashboardScroll_)return;
+    const int cardHeight=std::clamp(dashboardScroll_->viewport()->height()*3/4,420,720);
+    if(activityPanel_->height()!=cardHeight)activityPanel_->setFixedHeight(cardHeight);
+    dashboard_->layout()->invalidate();
+    dashboard_->layout()->activate();
+    dashboard_->updateGeometry();
+}
+bool StatsWindow::eventFilter(QObject* watched,QEvent* event){
+    if(dashboardScroll_&&watched==dashboardScroll_->viewport()&&event->type()==QEvent::Resize)
+        updateDashboardLayout();
+    return QMainWindow::eventFilter(watched,event);
 }
 void StatsWindow::prepareExit() {
     exiting_ = true;

@@ -8,6 +8,7 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <array>
 
 namespace wi {
 struct ViewFilter {
@@ -15,7 +16,7 @@ struct ViewFilter {
     std::string type, app;
     std::string softwareType;
     std::string activityType, activityApp;
-    int activityZoom = 0;
+    int activityGrouping = 0;
     bool mouseDetails=false;
 };
 struct RankedControl {
@@ -24,6 +25,7 @@ struct RankedControl {
 };
 struct HourCount {
     Count start = 0, end = 0, count = 0;
+    std::array<Count,4> series{};
 };
 struct ActivePeriod {
     Count start = 0, end = 0, count = 0;
@@ -37,6 +39,7 @@ struct ViewResult {
     Count total = 0;
     Count todayMouse = 0, todayKeyboard = 0, todayGamepad = 0;
     Count rangeStart = 0, rangeEnd = 0, activityBucketSeconds = 3600;
+    int activityGrouping=0;
     std::vector<RankedControl> controls;
     std::vector<HourCount> hours;
     Count activityTotal = 0, activeMinutes = 0;
@@ -78,7 +81,7 @@ class Engine : public QObject {
     void watch(ViewFilter filter, quint64 request);
     void unwatch();
     void refresh();
-    void setActivityZoom(int zoom);
+    void setActivityGrouping(int grouping);
     void setInterval(int seconds);
     void flush();
     void clear();
