@@ -52,6 +52,7 @@ struct ViewResult {
         Count total=0;
     };
     std::vector<MouseScreen> mouseScreens;
+    std::vector<RankedApplication> movement;
 };
 struct EngineStatus {
     Count unsaved = 0, lastCommit = 0;
@@ -70,7 +71,7 @@ class Engine : public QObject {
     void start();
     void record(const std::string &type, const std::string &control,
                 const std::string &name, const std::string &app,
-                const std::string &appName, int count,
+                const std::string &appName, Count count,
                 std::optional<MousePosition> position=std::nullopt);
     void inputError(const QString &message);
     void watch(ViewFilter filter, quint64 request);
@@ -84,6 +85,8 @@ class Engine : public QObject {
     void finish();
     void discardAndFinish();
     EngineStatus status() const;
+    int mouseDpi()const{return mouseDpi_.load();}
+    void setMouseDpi(int value){mouseDpi_=value;}
   signals:
     void viewReady(std::shared_ptr<const wi::ViewResult> result);
     void notice(QString message);
@@ -91,6 +94,7 @@ class Engine : public QObject {
 
   private:
     QString root_;
+    std::atomic<int> mouseDpi_=2000;
     mutable std::mutex mutex_;
     std::condition_variable wake_;
     Buffer active_, displayChanges_;

@@ -21,6 +21,7 @@ class RankModel;
 class ActivityChart;
 class KeyboardHeatmap;
 class MouseStatistics;
+class GamepadHeatmap;
 
 class StatsWindow : public QMainWindow {
     Q_OBJECT
@@ -47,6 +48,14 @@ class StatsWindow : public QMainWindow {
     QComboBox *activityAppFilter_, *activityDeviceFilter_, *period_;
     QComboBox *keyboardAppFilter_;
     QComboBox* mouseHeatmapMode_;
+    QWidget* movementPanel_;
+    QTableWidget* movementTable_;
+    QLabel* movementTotal_;
+    bool movementMode_=false;
+    bool gamepadMode_=false;
+    QWidget* gamepadPanel_;
+    GamepadHeatmap* gamepadHeatmap_;
+    QComboBox* gamepadAppFilter_;
     QDateTimeEdit *rangeStart_, *rangeEnd_;
     QWidget *timePanel_, *activityPanel_, *formula_, *dashboard_;
     QWidget *cardsPanel_, *keyboardPanel_;

@@ -6,6 +6,7 @@
 #include <tlhelp32.h>
 // clang-format on
 #include "capture.h"
+#include "stick_direction.h"
 #include <QCoreApplication>
 #include <QDir>
 #include <QJsonArray>
@@ -14,6 +15,7 @@
 #include <QSaveFile>
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <filesystem>
 #include <future>
 #include <thread>
@@ -309,6 +311,12 @@ static Device &device(HANDLE handle, bool mouse) {
                  Device{wi::categoryId(type), wi::categoryName(type), type, {}})
         .first->second;
 }
+static void recordMovement(const RAWMOUSE& mouse){
+    if(sleeping||(mouse.usFlags&MOUSE_MOVE_ABSOLUTE))return;
+    const double dx=mouse.lLastX,dy=mouse.lLastY;
+    const auto distance=wi::Count(std::llround(std::hypot(dx,dy)*25400000.0/service->mouseDpi()));
+    if(distance>0){const auto app=application(true);service->record("mouse_move","distance","移动距离",app.first,app.second,distance);}
+}
 static void rawInput(HRAWINPUT h) {
     UINT n = 0;
     if (GetRawInputData(h, RID_INPUT, nullptr, &n, sizeof(RAWINPUTHEADER)) !=
@@ -372,6 +380,7 @@ static void rawInput(HRAWINPUT h) {
         ++rawMouse;
         auto &d = device(r.header.hDevice, true);
         auto &m = r.data.mouse;
+        recordMovement(m);
         const char *labels[] = {"左键", "右键", "中键", "侧键 1", "侧键 2"};
         for (int i = 0; i < 5; ++i) {
             if (m.usButtonFlags & (1 << (i * 2)))
@@ -415,6 +424,7 @@ static void gamepads() {
     XINPUT_STATE previous[4]{};
     bool connected[4]{}, lt[4]{}, rt[4]{};
     ULONGLONG probe[4]{};
+    ULONGLONG stickSample[4]{};
     unsigned seen = 0;
     const WORD masks[] = {XINPUT_GAMEPAD_DPAD_UP,
                           XINPUT_GAMEPAD_DPAD_DOWN,
@@ -467,7 +477,19 @@ static void gamepads() {
                     add(id, "gamepad", name, "pad:RT", "RT", 1, false);
                 lt[i] = l;
                 rt[i] = r;
+                if(now>=stickSample[i]){
+                    const auto sample=[&](SHORT x,SHORT y,const char* code,const char* label){
+                        const double nx=double(x)/(x<0?32768:32767),ny=double(y)/(y<0?32768:32767);
+                        if(std::hypot(nx,ny)<=0.1)return;
+                        const int direction=wi::stickDirection(nx,ny);
+                        add(id,"gamepad",name,std::string(code)+":"+std::to_string(direction),std::string(label)+" · "+wi::stickDirectionName(direction),1,false);
+                    };
+                    sample(s.Gamepad.sThumbLX,s.Gamepad.sThumbLY,"pad:LS_MOVE","左摇杆移动");
+                    sample(s.Gamepad.sThumbRX,s.Gamepad.sThumbRY,"pad:RS_MOVE","右摇杆移动");
+                    stickSample[i]=now+500;
+                }
             } else {
+                stickSample[i]=now+500;
                 lt[i] = s.Gamepad.bLeftTrigger > 96;
                 rt[i] = s.Gamepad.bRightTrigger > 96;
             }

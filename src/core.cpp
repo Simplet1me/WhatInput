@@ -92,12 +92,10 @@ Database::Database(const std::string &path, bool ro) {
                           ? sqlite3_column_int(versionQuery, 0)
                           : -1;
         sqlite3_finalize(versionQuery);
-        if (version != 0 && version != 3 && version != 4)
+        if (version != 0 && version != 6)
             throw std::runtime_error(
                 "Database format changed: close WhatInput and remove the old "
                 "database before restarting.");
-        // This update explicitly preserves keyboard/gamepad history. Only the
-        // old mouse records are discarded, once, in the same schema transaction.
         exec("BEGIN IMMEDIATE");
         try {
             exec("CREATE TABLE IF NOT EXISTS mouse_screens("
@@ -111,8 +109,8 @@ Database::Database(const std::string &path, bool ro) {
                  "screen_id INTEGER NOT NULL REFERENCES mouse_screens(id),"
                  "x INTEGER NOT NULL,y INTEGER NOT NULL,press_count INTEGER NOT NULL CHECK(press_count>0),"
                  "PRIMARY KEY(second_utc,app_id,control_id,screen_id,x,y)) WITHOUT ROWID;");
-            if(version==3)exec("DELETE FROM counts WHERE device_id IN (SELECT id FROM devices WHERE type='mouse');");
-            exec("PRAGMA user_version=4; COMMIT;");
+            exec("CREATE TABLE IF NOT EXISTS mouse_movement(minute_utc INTEGER NOT NULL,app_id INTEGER NOT NULL REFERENCES apps(id),distance_nanometers INTEGER NOT NULL,PRIMARY KEY(minute_utc,app_id));");
+            exec("PRAGMA user_version=6; COMMIT;");
         }catch(...){sqlite3_exec(db_,"ROLLBACK",nullptr,nullptr,nullptr);throw;}
     } catch (...) {
         sqlite3_close(db_);
@@ -149,6 +147,12 @@ void Database::commit(const std::string &batch, const Buffer &entries) {
             for (auto &[k, e] : entries) {
                 if (e.count == 0)
                     continue;
+                if(k.type=="mouse_move"){
+                    Stmt app(db_,"INSERT INTO apps(identity,name) VALUES(?,?) ON CONFLICT(identity) DO UPDATE SET name=excluded.name");
+                    app.text(1,k.app);app.text(2,e.appName);app.done();
+                    Stmt move(db_,"INSERT INTO mouse_movement VALUES(?,(SELECT id FROM apps WHERE identity=?),?) ON CONFLICT(minute_utc,app_id) DO UPDATE SET distance_nanometers=distance_nanometers+excluded.distance_nanometers");
+                    sqlite3_bind_int64(move.s,1,k.second);move.text(2,k.app);sqlite3_bind_int64(move.s,3,e.count);move.done();continue;
+                }
                 Stmt d(db_, "INSERT INTO devices(identity,type,name,online) "
                             "VALUES(?,?,?,?) ON CONFLICT(identity) DO UPDATE "
                             "SET name=excluded.name,online=CASE WHEN ?5 THEN "
@@ -211,6 +215,6 @@ void Database::commit(const std::string &batch, const Buffer &entries) {
     }
 }
 void Database::clear() {
-    exec("BEGIN IMMEDIATE; DELETE FROM mouse_positions; DELETE FROM mouse_screens; DELETE FROM counts; DELETE FROM batches; COMMIT;");
+    exec("BEGIN IMMEDIATE; DELETE FROM mouse_movement; DELETE FROM mouse_positions; DELETE FROM mouse_screens; DELETE FROM counts; DELETE FROM batches; COMMIT;");
 }
 } // namespace wi

@@ -1,6 +1,7 @@
 #include "window.h"
 #include "keyboard_heatmap.h"
 #include "mouse_statistics.h"
+#include "gamepad_heatmap.h"
 #include <QApplication>
 #include <QCloseEvent>
 #include <QComboBox>
@@ -225,7 +226,7 @@ StatsWindow::StatsWindow(wi::Engine &engine, QString root, QWidget *parent)
     auto history = new QTreeWidgetItem(tree, QStringList{"历史统计"});
     history->setData(0, Qt::UserRole, 1);
     int pageIndex = 2;
-    for (auto name : QStringList{"键盘统计", "鼠标统计", "手柄统计"}) {
+    for (auto name : QStringList{"键盘统计", "鼠标统计", "手柄统计", "鼠标移动统计"}) {
         auto item = new QTreeWidgetItem(tree, QStringList{name});
         item->setData(0, Qt::UserRole, pageIndex++);
     }
@@ -452,6 +453,21 @@ StatsWindow::StatsWindow(wi::Engine &engine, QString root, QWidget *parent)
     keyboardPanel_->hide();
     homeLayout->addWidget(keyboardPanel_, 1);
     mouseStatistics_=new MouseStatistics(home);mouseStatistics_->hide();homeLayout->addWidget(mouseStatistics_,1);
+    movementPanel_=new QFrame(home);movementPanel_->setObjectName("panel");
+    auto movementLayout=new QVBoxLayout(movementPanel_);movementLayout->setContentsMargins(20,20,20,20);
+    auto distanceHeader=new QHBoxLayout;
+    movementTotal_=new QLabel("总移动距离：0 m",movementPanel_);movementTotal_->setObjectName("sectionTitle");distanceHeader->addWidget(movementTotal_);distanceHeader->addStretch();
+    distanceHeader->addWidget(new QLabel("鼠标 DPI",movementPanel_));auto dpi=new QSpinBox(movementPanel_);dpi->setRange(50,100000);dpi->setValue(engine_.mouseDpi());dpi->setAccessibleName("鼠标 DPI");distanceHeader->addWidget(dpi);
+    auto applyDpi=new QPushButton("应用 DPI",movementPanel_);distanceHeader->addWidget(applyDpi);movementLayout->addLayout(distanceHeader);
+    connect(applyDpi,&QPushButton::clicked,this,[this,dpi]{QDir().mkpath(root_+"/config");QSaveFile file(root_+"/config/mouse-distance.json");const auto data=QJsonDocument(QJsonObject{{"dpi",dpi->value()}}).toJson();if(!file.open(QIODevice::WriteOnly)||file.write(data)!=data.size()||!file.commit()){QMessageBox::warning(this,"DPI 保存失败",file.errorString());return;}engine_.setMouseDpi(dpi->value());});
+    movementTable_=new QTableWidget(0,3,movementPanel_);movementTable_->setHorizontalHeaderLabels({"软件","移动距离（m）","占比"});
+    movementTable_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);movementTable_->verticalHeader()->hide();movementTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);movementTable_->setShowGrid(false);movementLayout->addWidget(movementTable_,1);
+    movementPanel_->hide();homeLayout->addWidget(movementPanel_,1);
+    gamepadPanel_=new QFrame(home);gamepadPanel_->setObjectName("panel");auto gamepadLayout=new QVBoxLayout(gamepadPanel_);gamepadLayout->setContentsMargins(20,20,20,20);
+    auto gamepadHeader=new QHBoxLayout;auto padTitle=new QLabel("手柄热力图",gamepadPanel_);padTitle->setObjectName("sectionTitle");gamepadHeader->addWidget(padTitle);gamepadHeader->addStretch();
+    gamepadAppFilter_=new QComboBox(gamepadPanel_);gamepadAppFilter_->addItem("全部软件","");gamepadAppFilter_->setIconSize(QSize(22,22));gamepadAppFilter_->setMinimumWidth(240);gamepadAppFilter_->setAccessibleName("手柄统计软件筛选");gamepadHeader->addWidget(gamepadAppFilter_);gamepadLayout->addLayout(gamepadHeader);
+    gamepadHeatmap_=new GamepadHeatmap(gamepadPanel_);gamepadLayout->addWidget(gamepadHeatmap_,1);homeLayout->addWidget(gamepadPanel_,1);gamepadPanel_->hide();
+    connect(gamepadAppFilter_,&QComboBox::currentIndexChanged,this,[this]{if(gamepadMode_)query();});
     connect(mouseHeatmapMode_,&QComboBox::currentIndexChanged,this,[this](int index){mouseStatistics_->setGridMode(index==0);});
     connect(mouseStatistics_->softwareFilter(),&QComboBox::currentIndexChanged,this,[this]{if(mouseMode_)query();});
     activityPanel_ = new QFrame(home);
@@ -589,7 +605,7 @@ QScrollArea{background:#101922;border:0;}
             }
             if (pages_->currentIndex() == 0) {
                 if (queryDate_ != QDate::currentDate()) {
-                    if ((historyMode_ || keyboardMode_ || mouseMode_) &&
+                    if ((historyMode_ || keyboardMode_ || mouseMode_ || movementMode_ || gamepadMode_) &&
                         period_->currentIndex() != 5)
                         selectPeriod();
                     else
@@ -605,7 +621,7 @@ QScrollArea{background:#101922;border:0;}
 }
 wi::ViewFilter StatsWindow::filter() const {
     const auto date = QDate::currentDate();
-    const bool ranged = historyMode_ || keyboardMode_ || mouseMode_;
+    const bool ranged = historyMode_ || keyboardMode_ || mouseMode_ || movementMode_ || gamepadMode_;
     const bool all = ranged && period_->currentIndex() == 4;
     wi::ViewFilter selected{all      ? 0
             : ranged ? rangeStart_->dateTime().toSecsSinceEpoch()
@@ -613,10 +629,10 @@ wi::ViewFilter StatsWindow::filter() const {
             all      ? INT64_MAX
             : ranged ? rangeEnd_->dateTime().toSecsSinceEpoch()
                      : date.addDays(1).startOfDay().toSecsSinceEpoch(),
-            mouseMode_?std::string("mouse"):keyboardMode_
+            gamepadMode_?std::string("gamepad"):mouseMode_?std::string("mouse"):keyboardMode_
                 ? std::string("keyboard")
                 : deviceFilter_->currentData().toString().toStdString(),
-            (mouseMode_?mouseStatistics_->softwareFilter():(keyboardMode_ ? keyboardAppFilter_ : appFilter_))
+            (gamepadMode_?gamepadAppFilter_:(mouseMode_?mouseStatistics_->softwareFilter():(keyboardMode_ ? keyboardAppFilter_ : appFilter_)))
                 ->currentData()
                 .toString()
                 .toStdString(),
@@ -624,35 +640,46 @@ wi::ViewFilter StatsWindow::filter() const {
             activityDeviceFilter_->currentData().toString().toStdString(),
             activityAppFilter_->currentData().toString().toStdString(),
             activityZoom_->value()};
-    selected.mouseDetails=mouseMode_;return selected;
+    selected.mouseDetails=mouseMode_;
+    if(movementMode_){
+        selected.start-=selected.start%60;
+        if(selected.end!=INT64_MAX)selected.end-=selected.end%60;
+    }
+    return selected;
 }
 void StatsWindow::selectPage(int index) {
     if(mouseMode_&&index!=3)mouseStatistics_->clearRendering();
-    if(historyMode_||keyboardMode_||mouseMode_)timeSelections_[currentPage_]={period_->currentIndex(),rangeStart_->dateTime(),rangeEnd_->dateTime()};
+    if(historyMode_||keyboardMode_||mouseMode_||movementMode_||gamepadMode_)timeSelections_[currentPage_]={period_->currentIndex(),rangeStart_->dateTime(),rangeEnd_->dateTime()};
     currentPage_=index;
     historyMode_ = index == 1;
     keyboardMode_ = index == 2;
     mouseMode_=index==3;
-    pages_->setCurrentIndex(index < 4 ? 0 : index - 3);
+    movementMode_=index==5;
+    gamepadMode_=index==4;
+    rangeStart_->setDisplayFormat(movementMode_?"yyyy-MM-dd HH:mm":"yyyy-MM-dd HH:mm:ss");
+    rangeEnd_->setDisplayFormat(movementMode_?"yyyy-MM-dd HH:mm":"yyyy-MM-dd HH:mm:ss");
+    pages_->setCurrentIndex(0);
     pageTitle_->setText(historyMode_    ? "历史统计"
                         : keyboardMode_ ? "键盘统计"
-                        : mouseMode_?"鼠标统计":"首页");
+                        : mouseMode_?"鼠标统计":movementMode_?"鼠标移动统计":gamepadMode_?"手柄统计":"首页");
     formula_->setVisible(index == 0);
-    cardsPanel_->setVisible(!keyboardMode_&&!mouseMode_);
+    cardsPanel_->setVisible(!keyboardMode_&&!mouseMode_&&!movementMode_&&!gamepadMode_);
+    gamepadPanel_->setVisible(gamepadMode_);
+    movementPanel_->setVisible(movementMode_);
     keyboardPanel_->setVisible(keyboardMode_);
     mouseStatistics_->setVisible(mouseMode_);
     mouseHeatmapMode_->setVisible(mouseMode_);
-    timePanel_->setVisible(historyMode_ || keyboardMode_ || mouseMode_);
+    timePanel_->setVisible(historyMode_ || keyboardMode_ || mouseMode_ || movementMode_ || gamepadMode_);
     activityPanel_->setVisible(historyMode_);
     dashboard_->setMinimumHeight(historyMode_ ? 860 : 0);
     message_->hide();
-    if(historyMode_||keyboardMode_||mouseMode_){
+    if(historyMode_||keyboardMode_||mouseMode_||movementMode_||gamepadMode_){
         const auto selection=timeSelections_[index];QSignalBlocker blocker(period_);period_->setCurrentIndex(selection.period);
         if(selection.start.isValid())rangeStart_->setDateTime(selection.start);
         if(selection.end.isValid())rangeEnd_->setDateTime(selection.end);
         rangeStart_->setEnabled(selection.period==5);rangeEnd_->setEnabled(selection.period==5);
     }
-    if ((historyMode_ || keyboardMode_ || mouseMode_) && period_->currentIndex() != 5)
+    if ((historyMode_ || keyboardMode_ || mouseMode_ || movementMode_ || gamepadMode_) && period_->currentIndex() != 5)
         selectPeriod();
     else
         query();
@@ -717,7 +744,7 @@ void StatsWindow::receive(std::shared_ptr<const wi::ViewResult> result) {
         message_->show();
         return;
     }
-    for (auto combo : {appFilter_, activityAppFilter_, keyboardAppFilter_,mouseStatistics_->softwareFilter()}) {
+    for (auto combo : {appFilter_, activityAppFilter_, keyboardAppFilter_,mouseStatistics_->softwareFilter(),gamepadAppFilter_}) {
         const auto selected = combo->currentData().toString();
         bool changed = combo->count() != int(result->applications.size()) + 1;
         if (!changed) {
@@ -758,13 +785,28 @@ void StatsWindow::receive(std::shared_ptr<const wi::ViewResult> result) {
             combo->setCurrentIndex(std::max(0, index));
         }
     }
-    if ((historyMode_ || keyboardMode_ || mouseMode_) && period_->currentIndex() == 4) {
+    if ((historyMode_ || keyboardMode_ || mouseMode_ || movementMode_ || gamepadMode_) && period_->currentIndex() == 4) {
         rangeStart_->setDateTime(
             QDateTime::fromSecsSinceEpoch(result->rangeStart).toLocalTime());
         rangeEnd_->setDateTime(
             QDateTime::fromSecsSinceEpoch(result->rangeEnd).toLocalTime());
     }
     if(mouseMode_){mouseStatistics_->setStatistics(*result);updateStatus();return;}
+    if(gamepadMode_){gamepadHeatmap_->setStatistics(*result);updateStatus();return;}
+    if(movementMode_){
+        wi::Count total=0;for(const auto& row:result->movement)total+=row.count;
+        movementTotal_->setText("总移动距离："+QLocale().toString(double(total)/1000000000,'f',4)+" m");
+        movementTable_->setRowCount(std::max(1,int(result->movement.size())));
+        movementTable_->clearContents();int index=0;
+        for(const auto& row:result->movement){
+            const auto id=QString::fromStdString(row.id),fallback=QString::fromStdString(row.name);
+            auto name=new QTableWidgetItem(applicationIcon(id),applicationLabels_.label(id,fallback));name->setData(Qt::UserRole,id);name->setData(Qt::UserRole+1,fallback);movementTable_->setItem(index,0,name);
+            movementTable_->setItem(index,1,new QTableWidgetItem(QLocale().toString(double(row.count)/1000000000,'f',4)));
+            movementTable_->setItem(index,2,new QTableWidgetItem(QString::number(total?100.0*row.count/total:0,'f',2)+"%"));++index;
+        }
+        if(result->movement.empty())movementTable_->setItem(0,0,new QTableWidgetItem("这个时段没有鼠标移动"));
+        updateStatus();return;
+    }
     if (keyboardMode_) {
         keyboardHeatmap_->setStatistics(*result);
         updateStatus();
@@ -821,7 +863,8 @@ void StatsWindow::receive(std::shared_ptr<const wi::ViewResult> result) {
 }
 void StatsWindow::refreshApplicationNames() {
     applicationLabels_.refresh();
-    for (auto combo : {appFilter_, activityAppFilter_, keyboardAppFilter_,mouseStatistics_->softwareFilter()}) {
+    for(int i=0;i<movementTable_->rowCount();++i){auto item=movementTable_->item(i,0);if(item&&!item->data(Qt::UserRole).toString().isEmpty())item->setText(applicationLabels_.label(item->data(Qt::UserRole).toString(),item->data(Qt::UserRole+1).toString()));}
+    for (auto combo : {appFilter_, activityAppFilter_, keyboardAppFilter_,mouseStatistics_->softwareFilter(),gamepadAppFilter_}) {
         QSignalBlocker blocker(combo);
         for (int i = 1; i < combo->count(); ++i) {
             const auto title = applicationLabels_.label(

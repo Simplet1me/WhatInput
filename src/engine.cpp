@@ -72,6 +72,7 @@ struct ViewCache {
     std::map<Count, Count> activeMinutes;
     Count activityTotal = 0;
     std::map<std::string, Count> software;
+    std::map<std::string, Count> movement;
     std::map<std::string, std::string> apps;
     std::map<MousePosition,std::map<std::tuple<int,int,int>,Count>> mousePoints;
     Count total = 0;
@@ -88,6 +89,10 @@ struct ViewCache {
     }
     void add(const Entry &e) {
         apps[e.key.app] = e.appName;
+        if(e.key.type=="mouse_move"){
+            if(e.key.second>=filter.start&&e.key.second<filter.end)movement[e.key.app]+=e.count;
+            return;
+        }
         // Daily totals are independent of both ranking filters. Use local
         // calendar boundaries (not a fixed 24 hours) and include memory deltas.
         if (e.key.second >= todayStart && e.key.second < todayEnd) {
@@ -131,6 +136,8 @@ struct ViewCache {
         out->todayGamepad = todayGamepad;
         out->applications = apps;
         out->updated = QDateTime::currentDateTime();
+        for(const auto& [id,distance]:movement)out->movement.push_back({id,apps.at(id),distance});
+        std::sort(out->movement.begin(),out->movement.end(),[](const auto& a,const auto& b){return a.count>b.count;});
         out->rangeStart = filter.start;
         out->rangeEnd = filter.end;
         for(const auto& [screen,points]:mousePoints){
@@ -225,6 +232,8 @@ void merge(Buffer &destination, const Buffer &source) {
 Engine::Engine(QString root, int interval, QObject *parent)
     : QObject(parent), root_(std::move(root)) {
     status_.interval = std::clamp(interval, 1, 3600);
+    QFile mouseConfig(root_+"/config/mouse-distance.json");
+    if(mouseConfig.open(QIODevice::ReadOnly))mouseDpi_=std::clamp(QJsonDocument::fromJson(mouseConfig.readAll()).object().value("dpi").toInt(2000),50,100000);
     QFile stamp(root_ + "/config/last-save.json");
     if (QFile::exists(root_ + "/data/whatinput.sqlite3") &&
         stamp.open(QIODevice::ReadOnly))
@@ -249,11 +258,12 @@ Engine::~Engine() {
 void Engine::start() { worker_ = std::thread(&Engine::run, this); }
 void Engine::record(const std::string &type, const std::string &control,
                     const std::string &name, const std::string &app,
-                    const std::string &appName, int count,
+                    const std::string &appName, Count count,
                     std::optional<MousePosition> position) {
     if (count <= 0)
         return;
     Key k{nowSecond(), categoryId(type), type, control, app};
+    if(type=="mouse_move")k.second-=k.second%60;
     if(type=="mouse")k.mouse=std::move(position);
     Entry entry{k, categoryName(type), name, appName, count};
     std::lock_guard lock(mutex_);
@@ -568,7 +578,7 @@ void Engine::run() {
                         bool found = false;
                         Query extent(db->handle(),
                                      "SELECT MIN(second_utc),MAX(second_utc) "
-                                     "FROM counts");
+                                     "FROM (SELECT second_utc FROM counts UNION ALL SELECT minute_utc AS second_utc FROM mouse_movement)");
                         if (extent.next() &&
                             sqlite3_column_type(extent.s, 0) != SQLITE_NULL) {
                             first = sqlite3_column_int64(extent.s, 0);
@@ -604,6 +614,9 @@ void Engine::run() {
                         cache.apps[apps.text(0)] = apps.text(1);
                     eachStored(*db, {viewFilter.start, viewFilter.end, "", ""},
                                [&](const Entry &e) { cache.add(e); });
+                    Query moves(db->handle(),"SELECT m.minute_utc,a.identity,a.name,m.distance_nanometers FROM mouse_movement m JOIN apps a ON a.id=m.app_id WHERE m.minute_utc>=?1 AND m.minute_utc<?2");
+                    sqlite3_bind_int64(moves.s,1,viewFilter.start);sqlite3_bind_int64(moves.s,2,viewFilter.end);
+                    while(moves.next())cache.add(Entry{Key{sqlite3_column_int64(moves.s,0),"category:mouse_move","mouse_move","distance",moves.text(1)},"鼠标移动","移动距离",moves.text(2),sqlite3_column_int64(moves.s,3)});
                     if(viewFilter.mouseDetails){
                         Query points(db->handle(),
                             "SELECT s.identity,s.name,s.desktop_x,s.desktop_y,s.width,s.height,p.x,p.y,k.identity,SUM(p.press_count) "
