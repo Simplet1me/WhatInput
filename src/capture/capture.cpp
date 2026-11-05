@@ -5,8 +5,8 @@
 #include <xinput.h>
 #include <tlhelp32.h>
 // clang-format on
-#include "capture.h"
-#include "stick_direction.h"
+#include "capture/capture.h"
+#include "core/stick_direction.h"
 #include <QCoreApplication>
 #include <QDir>
 #include <QJsonArray>
@@ -704,6 +704,7 @@ bool startCapture(Engine &engine, std::function<void()> showWindow,
         WNDCLASSW cls{};
         cls.lpfnWndProc = procedure;
         cls.hInstance = instance;
+        cls.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(1));
         cls.lpszClassName = L"WhatInputCollector";
         RegisterClassW(&cls);
         HWND h = CreateWindowW(cls.lpszClassName, L"WhatInput capture", 0, 0, 0,

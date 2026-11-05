@@ -1,8 +1,8 @@
 // clang-format off
 #include <windows.h>
 // clang-format on
-#include "capture.h"
-#include "window.h"
+#include "capture/capture.h"
+#include "ui/window.h"
 #include <QApplication>
 #include <QDir>
 #include <QFile>
@@ -12,8 +12,6 @@
 #include <QJsonObject>
 #include <QMenu>
 #include <QMessageBox>
-#include <QPainter>
-#include <QPixmap>
 #include <QPushButton>
 #include <QSaveFile>
 #include <QSessionManager>
@@ -53,18 +51,7 @@ bool setAutoStart(bool enabled, const QString &executable) {
     return rc == ERROR_SUCCESS;
 }
 QIcon applicationIcon() {
-    QPixmap pixmap(64, 64);
-    pixmap.fill(Qt::transparent);
-    QPainter p(&pixmap);
-    p.setRenderHint(QPainter::Antialiasing);
-    p.setBrush(QColor("#a9edc8"));
-    p.setPen(Qt::NoPen);
-    p.drawRoundedRect(QRectF(2, 2, 60, 60), 13, 13);
-    QFont font("Segoe UI", 29, QFont::Bold);
-    p.setFont(font);
-    p.setPen(QColor("#123426"));
-    p.drawText(pixmap.rect(), Qt::AlignCenter, "W");
-    return QIcon(pixmap);
+    return QIcon(":/assets/WhatInput.ico");
 }
 } // namespace
 int main(int argc, char **argv) {

@@ -1,6 +1,6 @@
 #pragma once
-#include "application_labels.h"
-#include "engine.h"
+#include "platform/application_labels.h"
+#include "engine/engine.h"
 #include <QAbstractTableModel>
 #include <QHash>
 #include <QIcon>

@@ -1,4 +1,4 @@
-#include "mouse_statistics.h"
+#include "ui/mouse/mouse_statistics.h"
 #include <QDialog>
 #include <QGuiApplication>
 #include <QScreen>

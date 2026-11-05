@@ -1,4 +1,4 @@
-#include "heatmap_renderer.h"
+#include "ui/mouse/heatmap_renderer.h"
 #include <QMetaObject>
 #include <QColor>
 #include <algorithm>

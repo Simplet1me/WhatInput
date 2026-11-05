@@ -1,5 +1,5 @@
-#include "gamepad_heatmap.h"
-#include "stick_direction.h"
+#include "ui/gamepad/gamepad_heatmap.h"
+#include "core/stick_direction.h"
 #include <QPainter>
 #include <QPainterPath>
 #include <QMouseEvent>

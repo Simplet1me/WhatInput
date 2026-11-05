@@ -9,6 +9,8 @@ call "%VCVARS%"
 if errorlevel 1 exit /b 1
 if not defined QT_ROOT set "QT_ROOT=%CD%\.tools\Qt\6.8.3\msvc2022_64"
 set "PATH=F:\Program Files\Microsoft Visual Studio\18\Insiders\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja;%PATH%"
+powershell -NoProfile -ExecutionPolicy Bypass -File packaging\make-icon.ps1
+if errorlevel 1 exit /b 1
 cmake -S . -B build/release -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="%QT_ROOT%"
 if errorlevel 1 exit /b 1
 rem Rebuild every object: the local MSVC /showIncludes prefix can be decoded

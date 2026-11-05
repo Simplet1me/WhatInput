@@ -1,4 +1,4 @@
-#include "keyboard_heatmap.h"
+#include "ui/keyboard/keyboard_heatmap.h"
 #include <QLocale>
 #include <QMouseEvent>
 #include <QPainter>

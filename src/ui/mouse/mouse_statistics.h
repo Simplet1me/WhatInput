@@ -1,6 +1,6 @@
 #pragma once
-#include "engine.h"
-#include "heatmap_renderer.h"
+#include "engine/engine.h"
+#include "ui/mouse/heatmap_renderer.h"
 #include <QWidget>
 #include <QHash>
 class QGridLayout;

@@ -1,7 +1,7 @@
-#include "window.h"
-#include "keyboard_heatmap.h"
-#include "mouse_statistics.h"
-#include "gamepad_heatmap.h"
+#include "ui/window.h"
+#include "ui/keyboard/keyboard_heatmap.h"
+#include "ui/mouse/mouse_statistics.h"
+#include "ui/gamepad/gamepad_heatmap.h"
 #include <QApplication>
 #include <QCloseEvent>
 #include <QComboBox>

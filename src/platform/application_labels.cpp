@@ -1,4 +1,4 @@
-#include "application_labels.h"
+#include "platform/application_labels.h"
 #include <QDir>
 #include <QFileInfo>
 #include <windows.h>
