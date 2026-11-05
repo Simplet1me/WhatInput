@@ -56,6 +56,10 @@ class StatsWindow : public QMainWindow {
     QWidget* gamepadPanel_;
     GamepadHeatmap* gamepadHeatmap_;
     QComboBox* gamepadAppFilter_;
+    bool combinationMode_=false;
+    QWidget* combinationPanel_;
+    QComboBox* combinationAppFilter_;
+    QTableWidget* combinationTable_;
     QDateTimeEdit *rangeStart_, *rangeEnd_;
     QWidget *timePanel_, *activityPanel_, *formula_, *dashboard_;
     QWidget *cardsPanel_, *keyboardPanel_;

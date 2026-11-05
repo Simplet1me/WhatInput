@@ -73,6 +73,7 @@ struct ViewCache {
     Count activityTotal = 0;
     std::map<std::string, Count> software;
     std::map<std::string, Count> movement;
+    std::map<std::string,RankedControl> combinations;
     std::map<std::string, std::string> apps;
     std::map<MousePosition,std::map<std::tuple<int,int,int>,Count>> mousePoints;
     Count total = 0;
@@ -89,6 +90,12 @@ struct ViewCache {
     }
     void add(const Entry &e) {
         apps[e.key.app] = e.appName;
+        if(e.key.type=="keyboard_combo"){
+            if(e.key.second>=filter.start&&e.key.second<filter.end&&(filter.app.empty()||filter.app==e.key.app)){
+                auto& row=combinations[e.key.control];row.type=e.key.type;row.control=e.key.control;row.name=e.controlName;row.count+=e.count;
+            }
+            return;
+        }
         if(e.key.type=="mouse_move"){
             if(e.key.second>=filter.start&&e.key.second<filter.end)movement[e.key.app]+=e.count;
             return;
@@ -136,6 +143,8 @@ struct ViewCache {
         out->todayGamepad = todayGamepad;
         out->applications = apps;
         out->updated = QDateTime::currentDateTime();
+        for(const auto& [id,row]:combinations)out->combinations.push_back(row);
+        std::sort(out->combinations.begin(),out->combinations.end(),[](const auto& a,const auto& b){return a.count!=b.count?a.count>b.count:a.control<b.control;});
         for(const auto& [id,distance]:movement)out->movement.push_back({id,apps.at(id),distance});
         std::sort(out->movement.begin(),out->movement.end(),[](const auto& a,const auto& b){return a.count>b.count;});
         out->rangeStart = filter.start;
@@ -578,7 +587,7 @@ void Engine::run() {
                         bool found = false;
                         Query extent(db->handle(),
                                      "SELECT MIN(second_utc),MAX(second_utc) "
-                                     "FROM (SELECT second_utc FROM counts UNION ALL SELECT minute_utc AS second_utc FROM mouse_movement)");
+                                     "FROM (SELECT second_utc FROM counts UNION ALL SELECT minute_utc AS second_utc FROM mouse_movement UNION ALL SELECT second_utc FROM keyboard_combinations)");
                         if (extent.next() &&
                             sqlite3_column_type(extent.s, 0) != SQLITE_NULL) {
                             first = sqlite3_column_int64(extent.s, 0);
@@ -614,6 +623,9 @@ void Engine::run() {
                         cache.apps[apps.text(0)] = apps.text(1);
                     eachStored(*db, {viewFilter.start, viewFilter.end, "", ""},
                                [&](const Entry &e) { cache.add(e); });
+                    Query combos(db->handle(),"SELECT c.second_utc,c.identity,c.name,a.identity,a.name,c.press_count FROM keyboard_combinations c JOIN apps a ON a.id=c.app_id WHERE c.second_utc>=?1 AND c.second_utc<?2 AND (?3='' OR a.identity=?3)");
+                    sqlite3_bind_int64(combos.s,1,viewFilter.start);sqlite3_bind_int64(combos.s,2,viewFilter.end);combos.text(3,viewFilter.app);
+                    while(combos.next())cache.add(Entry{Key{sqlite3_column_int64(combos.s,0),"category:keyboard_combo","keyboard_combo",combos.text(1),combos.text(3)},"组合按键",combos.text(2),combos.text(4),sqlite3_column_int64(combos.s,5)});
                     Query moves(db->handle(),"SELECT m.minute_utc,a.identity,a.name,m.distance_nanometers FROM mouse_movement m JOIN apps a ON a.id=m.app_id WHERE m.minute_utc>=?1 AND m.minute_utc<?2");
                     sqlite3_bind_int64(moves.s,1,viewFilter.start);sqlite3_bind_int64(moves.s,2,viewFilter.end);
                     while(moves.next())cache.add(Entry{Key{sqlite3_column_int64(moves.s,0),"category:mouse_move","mouse_move","distance",moves.text(1)},"鼠标移动","移动距离",moves.text(2),sqlite3_column_int64(moves.s,3)});

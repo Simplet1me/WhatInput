@@ -226,7 +226,7 @@ StatsWindow::StatsWindow(wi::Engine &engine, QString root, QWidget *parent)
     auto history = new QTreeWidgetItem(tree, QStringList{"历史统计"});
     history->setData(0, Qt::UserRole, 1);
     int pageIndex = 2;
-    for (auto name : QStringList{"键盘统计", "鼠标统计", "手柄统计", "鼠标移动统计"}) {
+    for (auto name : QStringList{"键盘统计", "鼠标统计", "手柄统计", "鼠标移动统计", "组合按键统计"}) {
         auto item = new QTreeWidgetItem(tree, QStringList{name});
         item->setData(0, Qt::UserRole, pageIndex++);
     }
@@ -468,6 +468,11 @@ StatsWindow::StatsWindow(wi::Engine &engine, QString root, QWidget *parent)
     gamepadAppFilter_=new QComboBox(gamepadPanel_);gamepadAppFilter_->addItem("全部软件","");gamepadAppFilter_->setIconSize(QSize(22,22));gamepadAppFilter_->setMinimumWidth(240);gamepadAppFilter_->setAccessibleName("手柄统计软件筛选");gamepadHeader->addWidget(gamepadAppFilter_);gamepadLayout->addLayout(gamepadHeader);
     gamepadHeatmap_=new GamepadHeatmap(gamepadPanel_);gamepadLayout->addWidget(gamepadHeatmap_,1);homeLayout->addWidget(gamepadPanel_,1);gamepadPanel_->hide();
     connect(gamepadAppFilter_,&QComboBox::currentIndexChanged,this,[this]{if(gamepadMode_)query();});
+    combinationPanel_=new QFrame(home);combinationPanel_->setObjectName("panel");auto comboLayout=new QVBoxLayout(combinationPanel_);comboLayout->setContentsMargins(20,20,20,20);
+    auto comboHeader=new QHBoxLayout;auto comboTitle=new QLabel("组合按键排行",combinationPanel_);comboTitle->setObjectName("sectionTitle");comboHeader->addWidget(comboTitle);comboHeader->addStretch();
+    combinationAppFilter_=new QComboBox(combinationPanel_);combinationAppFilter_->addItem("全部软件","");combinationAppFilter_->setIconSize(QSize(22,22));combinationAppFilter_->setMinimumWidth(240);combinationAppFilter_->setAccessibleName("组合按键软件筛选");comboHeader->addWidget(combinationAppFilter_);comboLayout->addLayout(comboHeader);
+    combinationTable_=new QTableWidget(0,3,combinationPanel_);combinationTable_->setHorizontalHeaderLabels({"组合按键","次数","占比"});combinationTable_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);combinationTable_->verticalHeader()->hide();combinationTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);combinationTable_->setShowGrid(false);comboLayout->addWidget(combinationTable_,1);homeLayout->addWidget(combinationPanel_,1);combinationPanel_->hide();
+    connect(combinationAppFilter_,&QComboBox::currentIndexChanged,this,[this]{if(combinationMode_)query();});
     connect(mouseHeatmapMode_,&QComboBox::currentIndexChanged,this,[this](int index){mouseStatistics_->setGridMode(index==0);});
     connect(mouseStatistics_->softwareFilter(),&QComboBox::currentIndexChanged,this,[this]{if(mouseMode_)query();});
     activityPanel_ = new QFrame(home);
@@ -605,7 +610,7 @@ QScrollArea{background:#101922;border:0;}
             }
             if (pages_->currentIndex() == 0) {
                 if (queryDate_ != QDate::currentDate()) {
-                    if ((historyMode_ || keyboardMode_ || mouseMode_ || movementMode_ || gamepadMode_) &&
+                    if ((historyMode_ || keyboardMode_ || mouseMode_ || movementMode_ || gamepadMode_ || combinationMode_) &&
                         period_->currentIndex() != 5)
                         selectPeriod();
                     else
@@ -621,7 +626,7 @@ QScrollArea{background:#101922;border:0;}
 }
 wi::ViewFilter StatsWindow::filter() const {
     const auto date = QDate::currentDate();
-    const bool ranged = historyMode_ || keyboardMode_ || mouseMode_ || movementMode_ || gamepadMode_;
+    const bool ranged = historyMode_ || keyboardMode_ || mouseMode_ || movementMode_ || gamepadMode_ || combinationMode_;
     const bool all = ranged && period_->currentIndex() == 4;
     wi::ViewFilter selected{all      ? 0
             : ranged ? rangeStart_->dateTime().toSecsSinceEpoch()
@@ -632,7 +637,7 @@ wi::ViewFilter StatsWindow::filter() const {
             gamepadMode_?std::string("gamepad"):mouseMode_?std::string("mouse"):keyboardMode_
                 ? std::string("keyboard")
                 : deviceFilter_->currentData().toString().toStdString(),
-            (gamepadMode_?gamepadAppFilter_:(mouseMode_?mouseStatistics_->softwareFilter():(keyboardMode_ ? keyboardAppFilter_ : appFilter_)))
+            (combinationMode_?combinationAppFilter_:(gamepadMode_?gamepadAppFilter_:(mouseMode_?mouseStatistics_->softwareFilter():(keyboardMode_ ? keyboardAppFilter_ : appFilter_))))
                 ->currentData()
                 .toString()
                 .toStdString(),
@@ -649,37 +654,39 @@ wi::ViewFilter StatsWindow::filter() const {
 }
 void StatsWindow::selectPage(int index) {
     if(mouseMode_&&index!=3)mouseStatistics_->clearRendering();
-    if(historyMode_||keyboardMode_||mouseMode_||movementMode_||gamepadMode_)timeSelections_[currentPage_]={period_->currentIndex(),rangeStart_->dateTime(),rangeEnd_->dateTime()};
+    if(historyMode_||keyboardMode_||mouseMode_||movementMode_||gamepadMode_||combinationMode_)timeSelections_[currentPage_]={period_->currentIndex(),rangeStart_->dateTime(),rangeEnd_->dateTime()};
     currentPage_=index;
     historyMode_ = index == 1;
     keyboardMode_ = index == 2;
     mouseMode_=index==3;
     movementMode_=index==5;
     gamepadMode_=index==4;
+    combinationMode_=index==6;
     rangeStart_->setDisplayFormat(movementMode_?"yyyy-MM-dd HH:mm":"yyyy-MM-dd HH:mm:ss");
     rangeEnd_->setDisplayFormat(movementMode_?"yyyy-MM-dd HH:mm":"yyyy-MM-dd HH:mm:ss");
     pages_->setCurrentIndex(0);
     pageTitle_->setText(historyMode_    ? "历史统计"
                         : keyboardMode_ ? "键盘统计"
-                        : mouseMode_?"鼠标统计":movementMode_?"鼠标移动统计":gamepadMode_?"手柄统计":"首页");
+                        : mouseMode_?"鼠标统计":movementMode_?"鼠标移动统计":gamepadMode_?"手柄统计":combinationMode_?"组合按键统计":"首页");
     formula_->setVisible(index == 0);
-    cardsPanel_->setVisible(!keyboardMode_&&!mouseMode_&&!movementMode_&&!gamepadMode_);
+    cardsPanel_->setVisible(!keyboardMode_&&!mouseMode_&&!movementMode_&&!gamepadMode_&&!combinationMode_);
+    combinationPanel_->setVisible(combinationMode_);
     gamepadPanel_->setVisible(gamepadMode_);
     movementPanel_->setVisible(movementMode_);
     keyboardPanel_->setVisible(keyboardMode_);
     mouseStatistics_->setVisible(mouseMode_);
     mouseHeatmapMode_->setVisible(mouseMode_);
-    timePanel_->setVisible(historyMode_ || keyboardMode_ || mouseMode_ || movementMode_ || gamepadMode_);
+    timePanel_->setVisible(historyMode_ || keyboardMode_ || mouseMode_ || movementMode_ || gamepadMode_ || combinationMode_);
     activityPanel_->setVisible(historyMode_);
     dashboard_->setMinimumHeight(historyMode_ ? 860 : 0);
     message_->hide();
-    if(historyMode_||keyboardMode_||mouseMode_||movementMode_||gamepadMode_){
+    if(historyMode_||keyboardMode_||mouseMode_||movementMode_||gamepadMode_||combinationMode_){
         const auto selection=timeSelections_[index];QSignalBlocker blocker(period_);period_->setCurrentIndex(selection.period);
         if(selection.start.isValid())rangeStart_->setDateTime(selection.start);
         if(selection.end.isValid())rangeEnd_->setDateTime(selection.end);
         rangeStart_->setEnabled(selection.period==5);rangeEnd_->setEnabled(selection.period==5);
     }
-    if ((historyMode_ || keyboardMode_ || mouseMode_ || movementMode_ || gamepadMode_) && period_->currentIndex() != 5)
+    if ((historyMode_ || keyboardMode_ || mouseMode_ || movementMode_ || gamepadMode_ || combinationMode_) && period_->currentIndex() != 5)
         selectPeriod();
     else
         query();
@@ -744,7 +751,7 @@ void StatsWindow::receive(std::shared_ptr<const wi::ViewResult> result) {
         message_->show();
         return;
     }
-    for (auto combo : {appFilter_, activityAppFilter_, keyboardAppFilter_,mouseStatistics_->softwareFilter(),gamepadAppFilter_}) {
+    for (auto combo : {appFilter_, activityAppFilter_, keyboardAppFilter_,mouseStatistics_->softwareFilter(),gamepadAppFilter_,combinationAppFilter_}) {
         const auto selected = combo->currentData().toString();
         bool changed = combo->count() != int(result->applications.size()) + 1;
         if (!changed) {
@@ -785,7 +792,7 @@ void StatsWindow::receive(std::shared_ptr<const wi::ViewResult> result) {
             combo->setCurrentIndex(std::max(0, index));
         }
     }
-    if ((historyMode_ || keyboardMode_ || mouseMode_ || movementMode_ || gamepadMode_) && period_->currentIndex() == 4) {
+    if ((historyMode_ || keyboardMode_ || mouseMode_ || movementMode_ || gamepadMode_ || combinationMode_) && period_->currentIndex() == 4) {
         rangeStart_->setDateTime(
             QDateTime::fromSecsSinceEpoch(result->rangeStart).toLocalTime());
         rangeEnd_->setDateTime(
@@ -793,6 +800,12 @@ void StatsWindow::receive(std::shared_ptr<const wi::ViewResult> result) {
     }
     if(mouseMode_){mouseStatistics_->setStatistics(*result);updateStatus();return;}
     if(gamepadMode_){gamepadHeatmap_->setStatistics(*result);updateStatus();return;}
+    if(combinationMode_){
+        wi::Count total=0;for(const auto& row:result->combinations)total+=row.count;
+        combinationTable_->setRowCount(std::max(1,int(result->combinations.size())));combinationTable_->clearContents();int index=0;
+        for(const auto& row:result->combinations){combinationTable_->setItem(index,0,new QTableWidgetItem(QString::fromStdString(row.name)));combinationTable_->setItem(index,1,new QTableWidgetItem(number(row.count)));combinationTable_->setItem(index,2,new QTableWidgetItem(QString::number(total?100.0*row.count/total:0,'f',2)+"%"));++index;}
+        if(result->combinations.empty())combinationTable_->setItem(0,0,new QTableWidgetItem("这个时段没有组合按键"));updateStatus();return;
+    }
     if(movementMode_){
         wi::Count total=0;for(const auto& row:result->movement)total+=row.count;
         movementTotal_->setText("总移动距离："+QLocale().toString(double(total)/1000000000,'f',4)+" m");
@@ -864,7 +877,7 @@ void StatsWindow::receive(std::shared_ptr<const wi::ViewResult> result) {
 void StatsWindow::refreshApplicationNames() {
     applicationLabels_.refresh();
     for(int i=0;i<movementTable_->rowCount();++i){auto item=movementTable_->item(i,0);if(item&&!item->data(Qt::UserRole).toString().isEmpty())item->setText(applicationLabels_.label(item->data(Qt::UserRole).toString(),item->data(Qt::UserRole+1).toString()));}
-    for (auto combo : {appFilter_, activityAppFilter_, keyboardAppFilter_,mouseStatistics_->softwareFilter(),gamepadAppFilter_}) {
+    for (auto combo : {appFilter_, activityAppFilter_, keyboardAppFilter_,mouseStatistics_->softwareFilter(),gamepadAppFilter_,combinationAppFilter_}) {
         QSignalBlocker blocker(combo);
         for (int i = 1; i < combo->count(); ++i) {
             const auto title = applicationLabels_.label(

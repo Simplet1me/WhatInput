@@ -53,6 +53,7 @@ struct ViewResult {
     };
     std::vector<MouseScreen> mouseScreens;
     std::vector<RankedApplication> movement;
+    std::vector<RankedControl> combinations;
 };
 struct EngineStatus {
     Count unsaved = 0, lastCommit = 0;

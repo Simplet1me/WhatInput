@@ -92,7 +92,7 @@ Database::Database(const std::string &path, bool ro) {
                           ? sqlite3_column_int(versionQuery, 0)
                           : -1;
         sqlite3_finalize(versionQuery);
-        if (version != 0 && version != 6)
+        if (version != 0 && version != 7)
             throw std::runtime_error(
                 "Database format changed: close WhatInput and remove the old "
                 "database before restarting.");
@@ -110,7 +110,8 @@ Database::Database(const std::string &path, bool ro) {
                  "x INTEGER NOT NULL,y INTEGER NOT NULL,press_count INTEGER NOT NULL CHECK(press_count>0),"
                  "PRIMARY KEY(second_utc,app_id,control_id,screen_id,x,y)) WITHOUT ROWID;");
             exec("CREATE TABLE IF NOT EXISTS mouse_movement(minute_utc INTEGER NOT NULL,app_id INTEGER NOT NULL REFERENCES apps(id),distance_nanometers INTEGER NOT NULL,PRIMARY KEY(minute_utc,app_id));");
-            exec("PRAGMA user_version=6; COMMIT;");
+            exec("CREATE TABLE IF NOT EXISTS keyboard_combinations(second_utc INTEGER NOT NULL,identity TEXT NOT NULL,name TEXT NOT NULL,app_id INTEGER NOT NULL REFERENCES apps(id),press_count INTEGER NOT NULL CHECK(press_count>0),PRIMARY KEY(second_utc,identity,app_id)) WITHOUT ROWID;");
+            exec("PRAGMA user_version=7; COMMIT;");
         }catch(...){sqlite3_exec(db_,"ROLLBACK",nullptr,nullptr,nullptr);throw;}
     } catch (...) {
         sqlite3_close(db_);
@@ -147,6 +148,11 @@ void Database::commit(const std::string &batch, const Buffer &entries) {
             for (auto &[k, e] : entries) {
                 if (e.count == 0)
                     continue;
+                if(k.type=="keyboard_combo"){
+                    Stmt app(db_,"INSERT INTO apps(identity,name) VALUES(?,?) ON CONFLICT(identity) DO UPDATE SET name=excluded.name");app.text(1,k.app);app.text(2,e.appName);app.done();
+                    Stmt combo(db_,"INSERT INTO keyboard_combinations VALUES(?,?,?,(SELECT id FROM apps WHERE identity=?),?) ON CONFLICT(second_utc,identity,app_id) DO UPDATE SET press_count=press_count+excluded.press_count,name=excluded.name");
+                    sqlite3_bind_int64(combo.s,1,k.second);combo.text(2,k.control);combo.text(3,e.controlName);combo.text(4,k.app);sqlite3_bind_int64(combo.s,5,e.count);combo.done();continue;
+                }
                 if(k.type=="mouse_move"){
                     Stmt app(db_,"INSERT INTO apps(identity,name) VALUES(?,?) ON CONFLICT(identity) DO UPDATE SET name=excluded.name");
                     app.text(1,k.app);app.text(2,e.appName);app.done();
@@ -215,6 +221,6 @@ void Database::commit(const std::string &batch, const Buffer &entries) {
     }
 }
 void Database::clear() {
-    exec("BEGIN IMMEDIATE; DELETE FROM mouse_movement; DELETE FROM mouse_positions; DELETE FROM mouse_screens; DELETE FROM counts; DELETE FROM batches; COMMIT;");
+    exec("BEGIN IMMEDIATE; DELETE FROM keyboard_combinations; DELETE FROM mouse_movement; DELETE FROM mouse_positions; DELETE FROM mouse_screens; DELETE FROM counts; DELETE FROM batches; COMMIT;");
 }
 } // namespace wi

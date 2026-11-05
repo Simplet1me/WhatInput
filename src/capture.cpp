@@ -294,8 +294,28 @@ static void add(const std::string &, const std::string &type,
 struct Device {
     std::string id, name, type;
     wi::State state;
+    std::set<std::string> modifiers;
 };
 static std::map<HANDLE, Device> devices;
+static std::string modifierName(unsigned scan,unsigned flags){
+    if(scan==0x1d&&!(flags&RI_KEY_E1))return "Ctrl";
+    if((scan==0x2a||scan==0x36)&&flags==0)return "Shift";
+    if(scan==0x38&&!(flags&RI_KEY_E1))return "Alt";
+    if((scan==0x5b||scan==0x5c)&&(flags&RI_KEY_E0))return "Win";
+    return {};
+}
+static void combination(const std::string& code,const std::string& name){
+    std::set<std::string> held;
+    for(const auto& [handle,d]:devices)for(const auto& modifier:d.modifiers){
+        unsigned scan=0,flags=0;sscanf_s(modifier.c_str(),"kbd:%X:%u",&scan,&flags);
+        const auto label=modifierName(scan,flags);if(!label.empty())held.insert(label);
+    }
+    std::string prefix;
+    for(const auto label:{"Ctrl","Alt","Shift","Win"})if(held.contains(label))prefix+=std::string(label)+"+";
+    if(prefix.empty()||sleeping||stopping)return;
+    const auto app=application(false);
+    service->record("keyboard_combo","combo:"+prefix+code,prefix+name,app.first,app.second,1);
+}
 // All physical mice share one rolling 1000 ms wheel-count interval.
 // Keep the first accepted direction; suppressed deltas are never queued.
 static ULONGLONG lastWheelPressAt = 0;
@@ -361,6 +381,10 @@ static void rawInput(HRAWINPUT h) {
         snprintf(code, sizeof(code), "kbd:%04X:%u", scan,
                  k.Flags & (RI_KEY_E0 | RI_KEY_E1));
         bool pressed = !(k.Flags & RI_KEY_BREAK);
+        const auto modifier=modifierName(scan,k.Flags&(RI_KEY_E0|RI_KEY_E1));
+        if(!modifier.empty()){
+            if(pressed&&!sleeping)d.modifiers.insert(code);else d.modifiers.erase(code);
+        }
         if (d.state.edge(code, pressed)) {
             wchar_t label[128]{};
             LONG packed = LONG(scan << 16);
@@ -373,6 +397,7 @@ static void rawInput(HRAWINPUT h) {
             if (name.empty())
                 name = code;
             add(d.id, d.type, d.name, code, name, 1, false);
+            if(modifier.empty())combination(code,name);
         }
         if (k.VKey == VK_PAUSE)
             d.state.edge(code, false);
@@ -623,6 +648,7 @@ static LRESULT CALLBACK procedure(HWND h, UINT m, WPARAM w, LPARAM l) {
             devices.erase(reinterpret_cast<HANDLE>(l));
         break;
     case WM_POWERBROADCAST:
+        for(auto& [handle,d]:devices)d.modifiers.clear();
         if (w == PBT_APMSUSPEND) {
             sleeping = true;
             service->flush();
