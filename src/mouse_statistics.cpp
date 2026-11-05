@@ -31,8 +31,14 @@ QString displayName(QString name){name.remove("\\\\.\\");return name;}
 QComboBox* buttonChoices(QWidget* parent,int selected=-1){
     auto combo=new QComboBox(parent);combo->addItem("左右键",-1);combo->addItem("左键",0);combo->addItem("右键",1);combo->setCurrentIndex(combo->findData(selected));combo->setAccessibleName("热力图按键筛选");return combo;
 }
-QSpinBox* smoothingControl(QWidget* parent,int value=24){
-    auto spin=new QSpinBox(parent);spin->setRange(1,200);spin->setValue(value);spin->setSuffix(" px");spin->setAccessibleName("热力图平滑半径");spin->setToolTip("平滑影响半径；数值越小，热点细节越清晰");return spin;
+QSpinBox* gridControl(QWidget* parent,int value=10){
+    auto spin=new QSpinBox(parent);spin->setRange(5,100);spin->setSingleStep(5);spin->setValue(value);spin->setSuffix(" px");spin->setAccessibleName("热力图网格边长");spin->setToolTip("按物理像素划分正方形网格，默认 10 × 10");return spin;
+}
+QSpinBox* radiusControl(QWidget* parent,int value=24){
+    auto spin=new QSpinBox(parent);spin->setRange(1,200);spin->setValue(value);spin->setSuffix(" px");spin->setAccessibleName("普通热力图平滑半径");return spin;
+}
+QSpinBox* edgeControl(QWidget* parent,int value=0){
+    auto spin=new QSpinBox(parent);spin->setRange(0,4);spin->setValue(value);spin->setSuffix(" px");spin->setAccessibleName("网格边界衔接宽度");spin->setToolTip("仅处理格子交界，0 为硬边界；最大不超过半格");return spin;
 }
 QComboBox* scaleChoices(QWidget* parent,bool logarithmic=true){
     auto combo=new QComboBox(parent);combo->addItem("对数",true);combo->addItem("线性",false);combo->setCurrentIndex(logarithmic?0:1);combo->setAccessibleName("热力图颜色映射");return combo;
@@ -85,6 +91,14 @@ protected:
         const auto& field=*frame.density;
         const int x=std::clamp(int((event->position().x()-area.left())/area.width()*field.screen.width),0,field.screen.width-1);
         const int y=std::clamp(int((event->position().y()-area.top())/area.height()*field.screen.height),0,field.screen.height-1);
+        if(field.grid&&(!fullscreen||!showOriginalPoints)){
+            const int column=x/field.cellSize,row=y/field.cellSize;
+            const auto count=field.cellCounts[size_t(row)*field.columns+column];
+            QToolTip::showText(event->globalPosition().toPoint(),QString("网格 (%1, %2)–(%3, %4)\n%5 次")
+                .arg(column*field.cellSize).arg(row*field.cellSize)
+                .arg(std::min((column+1)*field.cellSize,field.screen.width)-1)
+                .arg(std::min((row+1)*field.cellSize,field.screen.height)-1).arg(number(count)),this);return;
+        }
         wi::Count count=0;for(const auto& point:field.points)if(point.x==x&&point.y==y)count+=point.count;
         QToolTip::showText(event->globalPosition().toPoint(),QString("(%1, %2) · %3 次").arg(x).arg(y).arg(number(count)),this);
     }
@@ -110,18 +124,21 @@ public:
         controlsPanel=new QFrame(this);controlsPanel->setObjectName("opacityControls");controlsPanel->setStyleSheet("QFrame#opacityControls{background:#263845;border:1px solid #738693;border-radius:6px;}QLabel{color:#e4edf3;font-size:13px;}");
         auto rows=new QVBoxLayout(controlsPanel);rows->setContentsMargins(12,6,12,6);rows->setSpacing(5);auto parameters=new QHBoxLayout;parameters->setSpacing(8);
         auto filter=buttonChoices(controlsPanel,batch->settings.button);parameters->addWidget(filter);
-        parameters->addWidget(new QLabel("平滑",controlsPanel));auto smoothing=smoothingControl(controlsPanel,batch->settings.smoothing);parameters->addWidget(smoothing);
+        parameters->addWidget(new QLabel(batch->settings.grid?"网格":"平滑",controlsPanel));auto cellSize=gridControl(controlsPanel,batch->settings.cellSize);parameters->addWidget(cellSize);cellSize->setVisible(batch->settings.grid);
+        auto radius=radiusControl(controlsPanel,batch->settings.radius);parameters->addWidget(radius);radius->setVisible(!batch->settings.grid);
         auto mode=scaleChoices(controlsPanel,batch->settings.logarithmic);parameters->addWidget(mode);
         parameters->addWidget(new QLabel("强度",controlsPanel));auto strength=strengthControl(controlsPanel,batch->settings.strength);parameters->addWidget(strength);
         auto original=new QToolButton(controlsPanel);original->setText("原始点");original->setCheckable(true);original->setToolTip("显示原始点击位置");original->setStyleSheet("QToolButton{color:white;background:#263845;border:1px solid #738693;border-radius:4px;padding:5px;}QToolButton:checked{background:#345b50;}");parameters->addWidget(original);
         QObject::connect(original,&QToolButton::toggled,this,[this](bool value){heatmap->showOriginalPoints=value;heatmap->update();});rows->addLayout(parameters);
-        auto apply=[this,filter,smoothing,mode,strength]{
-            HeatmapSettings value{filter->currentData().toInt(),smoothing->value(),strength->value(),mode->currentData().toBool()};
+        auto edge=edgeControl(controlsPanel,batch->settings.edgeBlend);
+        auto apply=[this,filter,cellSize,mode,strength,edge,radius]{
+            HeatmapSettings value{filter->currentData().toInt(),cellSize->value(),strength->value(),mode->currentData().toBool(),edge->value(),batch->settings.grid,radius->value()};
             renderer->request(batch->sources,value,0,batch);
         };
-        QObject::connect(filter,&QComboBox::currentIndexChanged,this,apply);QObject::connect(smoothing,&QSpinBox::valueChanged,this,apply);
+        QObject::connect(filter,&QComboBox::currentIndexChanged,this,apply);QObject::connect(cellSize,&QSpinBox::valueChanged,this,apply);QObject::connect(edge,&QSpinBox::valueChanged,this,apply);
+        QObject::connect(radius,&QSpinBox::valueChanged,this,apply);edge->setEnabled(batch->settings.grid);
         QObject::connect(mode,&QComboBox::currentIndexChanged,this,apply);QObject::connect(strength,&QSpinBox::valueChanged,this,apply);
-        auto opacityRow=new QHBoxLayout;opacityRow->setSpacing(10);opacityRow->addWidget(new QLabel("透明度",controlsPanel));
+        auto opacityRow=new QHBoxLayout;opacityRow->setSpacing(10);opacityRow->addWidget(new QLabel("衔接",controlsPanel));opacityRow->addWidget(edge);opacityRow->addWidget(new QLabel("透明度",controlsPanel));
         auto opacity=new QSlider(Qt::Horizontal,controlsPanel);opacity->setRange(0,100);opacity->setValue(0);opacity->setAccessibleName("全屏热力图透明度");opacityRow->addWidget(opacity,1);
         auto percentage=new QLabel("0%",controlsPanel);percentage->setMinimumWidth(38);percentage->setAlignment(Qt::AlignRight|Qt::AlignVCenter);opacityRow->addWidget(percentage);rows->addLayout(opacityRow);
         QObject::connect(opacity,&QSlider::valueChanged,this,[this,percentage](int value){heatmap->heatOpacity=1.0-value/100.0;percentage->setText(QString::number(value)+"%");heatmap->update();});
@@ -138,17 +155,21 @@ MouseStatistics::MouseStatistics(QWidget* parent):QWidget(parent){
     auto titleRow=new QHBoxLayout;auto title=new QLabel("鼠标点击热力图",mapPanel);title->setObjectName("sectionTitle");titleRow->addWidget(title);titleRow->addStretch();
     softwareFilter_=new QComboBox(mapPanel);softwareFilter_->addItem("全部软件","");softwareFilter_->setIconSize(QSize(22,22));softwareFilter_->setMinimumContentsLength(8);softwareFilter_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);softwareFilter_->setMaximumWidth(240);softwareFilter_->view()->setMinimumWidth(320);softwareFilter_->setAccessibleName("鼠标统计软件筛选");titleRow->addWidget(softwareFilter_);
     buttonFilter_=buttonChoices(mapPanel);titleRow->addWidget(buttonFilter_);maps->addLayout(titleRow);
-    auto parameters=new QHBoxLayout;parameters->setSpacing(8);parameters->addWidget(new QLabel("平滑",mapPanel));radius_=smoothingControl(mapPanel);parameters->addWidget(radius_);
+    auto parameters=new QHBoxLayout;parameters->setSpacing(8);parameters->addWidget(new QLabel("网格",mapPanel));gridSize_=gridControl(mapPanel);parameters->addWidget(gridSize_);
+    parameters->addWidget(new QLabel("衔接",mapPanel));edgeBlend_=edgeControl(mapPanel);parameters->addWidget(edgeBlend_);
+    parameters->addWidget(new QLabel("平滑",mapPanel));radius_=radiusControl(mapPanel);radius_->setEnabled(false);parameters->addWidget(radius_);
     scaleMode_=scaleChoices(mapPanel);parameters->addWidget(scaleMode_);parameters->addWidget(new QLabel("强度",mapPanel));strength_=strengthControl(mapPanel);parameters->addWidget(strength_);parameters->addStretch();maps->addLayout(parameters);
-    auto apply=[this]{requestRendering();};QObject::connect(buttonFilter_,&QComboBox::currentIndexChanged,this,apply);QObject::connect(radius_,&QSpinBox::valueChanged,this,apply);
+    auto apply=[this]{requestRendering();};QObject::connect(buttonFilter_,&QComboBox::currentIndexChanged,this,apply);QObject::connect(gridSize_,&QSpinBox::valueChanged,this,apply);QObject::connect(edgeBlend_,&QSpinBox::valueChanged,this,apply);
     QObject::connect(scaleMode_,&QComboBox::currentIndexChanged,this,apply);QObject::connect(strength_,&QSpinBox::valueChanged,this,apply);
+    QObject::connect(radius_,&QSpinBox::valueChanged,this,apply);
     screens_=new QGridLayout;maps->addLayout(screens_,1);empty_=new QLabel("暂无点击位置",mapPanel);empty_->setAlignment(Qt::AlignCenter);maps->addWidget(empty_,1);layout->addWidget(mapPanel,1);
     auto ratioPanel=new QFrame(this);ratioPanel->setObjectName("panel");ratioPanel->setFixedWidth(290);auto ratioLayout=new QVBoxLayout(ratioPanel);ratioLayout->setContentsMargins(14,20,14,20);
     auto heading=new QLabel("鼠标操作占比",ratioPanel);heading->setObjectName("sectionTitle");ratioLayout->addWidget(heading);
     ratios_=new QTableWidget(0,3,ratioPanel);ratios_->setHorizontalHeaderLabels({"操作","次数","占比"});ratios_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);ratios_->verticalHeader()->hide();ratios_->verticalHeader()->setDefaultSectionSize(36);ratios_->setShowGrid(false);ratios_->setEditTriggers(QAbstractItemView::NoEditTriggers);ratios_->setSelectionMode(QAbstractItemView::NoSelection);ratioLayout->addWidget(ratios_,1);layout->addWidget(ratioPanel);
     renderer_=new HeatmapRenderer(this);renderer_->ready=[this](std::shared_ptr<const HeatmapBatch> value){showBatch(std::move(value));};
 }
-HeatmapSettings MouseStatistics::settings()const{return {buttonFilter_->currentData().toInt(),radius_->value(),strength_->value(),scaleMode_->currentData().toBool()};}
+void MouseStatistics::setGridMode(bool grid){gridMode_=grid;gridSize_->setEnabled(grid);edgeBlend_->setEnabled(grid);radius_->setEnabled(!grid);requestRendering();}
+HeatmapSettings MouseStatistics::settings()const{return {buttonFilter_->currentData().toInt(),gridSize_->value(),strength_->value(),scaleMode_->currentData().toBool(),edgeBlend_->value(),gridMode_,radius_->value()};}
 void MouseStatistics::requestRendering(){if(sources_)renderer_->request(sources_,settings(),scope_,batch_);}
 void MouseStatistics::showBatch(std::shared_ptr<const HeatmapBatch> batch){
     batch_=std::move(batch);QSet<QString> keep;int index=0;

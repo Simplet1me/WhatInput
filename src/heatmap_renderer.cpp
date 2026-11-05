@@ -7,69 +7,103 @@
 
 namespace {
 using Cancel=std::function<bool()>;
-int reflected(int index,int size){
-    if(size<=1)return 0;
-    const int period=2*size;index%=period;if(index<0)index+=period;
-    return index<size?index:period-1-index;
-}
-std::array<int,3> boxRadii(double sigma){
-    // Three normalized box convolutions approximate a Gaussian, in O(pixels)
-    // time regardless of bandwidth. Reflection keeps edge clicks in the image.
-    const double ideal=std::sqrt(4*sigma*sigma+1);
-    int lower=std::max(1,int(std::floor(ideal)));if(lower%2==0)--lower;
-    const double middle=(12*sigma*sigma-3*lower*lower-12*lower-9)/(-4*lower-4);
-    const int small=std::clamp(int(std::round(middle)),0,3);
-    std::array<int,3> result{};for(int i=0;i<3;++i)result[i]=((i<small?lower:lower+2)-1)/2;
-    return result;
-}
-bool blur(const std::vector<float>& input,std::vector<float>& output,int width,int height,int radius,bool horizontal,const Cancel& cancel){
-    if(radius==0){output=input;return !cancel();}
-    const int length=horizontal?width:height,lines=horizontal?height:width;
-    std::vector<double> prefix(size_t(length+2*radius)+1);
-    const double inverse=1.0/(2*radius+1);
-    for(int line=0;line<lines;++line){
-        if(cancel())return false;
-        prefix[0]=0;
-        for(int i=0;i<length+2*radius;++i){const int coordinate=reflected(i-radius,length);const auto offset=horizontal?size_t(line)*width+coordinate:size_t(coordinate)*width+line;prefix[i+1]=prefix[i]+input[offset];}
-        for(int i=0;i<length;++i){const auto offset=horizontal?size_t(line)*width+i:size_t(i)*width+line;output[offset]=float((prefix[i+2*radius+1]-prefix[i])*inverse);}
+// Three separable box passes approximate a Gaussian without per-point kernels.
+bool smooth(std::vector<float>& pixels,int width,int height,int radius,const Cancel& cancel){
+    std::vector<float> temporary(pixels.size());
+    for(int pass=0;pass<3;++pass)for(int axis=0;axis<2;++axis){
+        const int length=axis?height:width,lines=axis?width:height;
+        auto index=[=](int line,int p){return axis?size_t(p)*width+line:size_t(line)*width+p;};
+        for(int line=0;line<lines;++line){
+            if(cancel())return false;
+            double sum=0;
+            for(int p=0;p<=std::min(radius,length-1);++p)sum+=pixels[index(line,p)];
+            for(int p=0;p<length;++p){
+                const int lo=std::max(0,p-radius),hi=std::min(length-1,p+radius);
+                temporary[index(line,p)]=float(sum/(hi-lo+1));
+                if(p-radius>=0)sum-=pixels[index(line,p-radius)];
+                if(p+radius+1<length)sum+=pixels[index(line,p+radius+1)];
+            }
+        }
+        pixels.swap(temporary);
     }
     return true;
+}
+struct AxisBlend {int first=0,second=0;double mix=0;};
+AxisBlend boundaryBlend(double coordinate,int length,int cellSize,int requestedWidth){
+    const int cells=(length+cellSize-1)/cellSize;
+    const int at=std::clamp(int(coordinate)/cellSize,0,cells-1);
+    const double blend=std::min(double(requestedWidth),cellSize/2.0-0.25);
+    if(blend<=0)return {at,at,0};
+    const double left=at*cellSize,right=std::min((at+1)*cellSize,length);
+    int first=at,second=at;double t=0;
+    if(at>0&&coordinate-left<blend){first=at-1;second=at;t=(coordinate-left+blend)/(2*blend);}
+    else if(at+1<cells&&right-coordinate<blend){first=at;second=at+1;t=(coordinate-right+blend)/(2*blend);}
+    else return {at,at,0};
+    t=std::clamp(t,0.0,1.0);
+    return {first,second,t*t*(3-2*t)};
 }
 std::shared_ptr<const HeatmapDensity> density(const wi::ViewResult::MouseScreen& source,const HeatmapSettings& settings,const std::shared_ptr<const HeatmapBatch>& previous,const Cancel& cancel){
     std::vector<wi::ViewResult::MousePoint> points;
     for(const auto& point:source.points)if(point.button==settings.button||(settings.button==-1&&(point.button==0||point.button==1)))points.push_back(point);
     if(previous)for(const auto& frame:previous->frames){
         const auto& field=frame.density;
-        if(field->screen==source.screen&&field->button==settings.button&&field->smoothing==settings.smoothing&&field->points==points)return field;
+        if(field->screen==source.screen&&field->button==settings.button&&field->cellSize==settings.cellSize&&field->edgeBlend==settings.edgeBlend&&field->grid==settings.grid&&field->radius==settings.radius&&field->points==points)return field;
     }
-    auto field=std::make_shared<HeatmapDensity>();field->screen=source.screen;field->button=settings.button;field->smoothing=settings.smoothing;field->points=std::move(points);
+    auto field=std::make_shared<HeatmapDensity>();field->screen=source.screen;field->button=settings.button;field->cellSize=settings.cellSize;field->edgeBlend=settings.edgeBlend;field->points=std::move(points);
     const int physicalWidth=std::max(1,source.screen.width),physicalHeight=std::max(1,source.screen.height);
-    const double scale=std::min({1.0,2560.0/physicalWidth,1600.0/physicalHeight});
+    const double scale=std::min({1.0,4096.0/physicalWidth,2160.0/physicalHeight});
     field->width=std::max(1,int(std::round(physicalWidth*scale)));field->height=std::max(1,int(std::round(physicalHeight*scale)));
-    const int width=field->width,height=field->height;
-    field->values.resize(size_t(width)*height);
-    // Bilinear deposition retains weighted counts and sub-grid positions.
+    field->grid=settings.grid;field->radius=settings.radius;
+    if(!settings.grid){
+        field->values.resize(size_t(field->width)*field->height);
+        for(const auto& point:field->points){
+            if(cancel())return {};
+            const double px=std::clamp((point.x+0.5)*field->width/physicalWidth-0.5,0.0,double(field->width-1));
+            const double py=std::clamp((point.y+0.5)*field->height/physicalHeight-0.5,0.0,double(field->height-1));
+            const int x=int(px),y=int(py);const double tx=px-x,ty=py-y;
+            for(int dy=0;dy<2;++dy)for(int dx=0;dx<2;++dx)
+                field->values[size_t(std::min(y+dy,field->height-1))*field->width+std::min(x+dx,field->width-1)]+=float(double(point.count)*(dx?tx:1-tx)*(dy?ty:1-ty));
+        }
+        if(!smooth(field->values,field->width,field->height,std::max(1,int(std::round(settings.radius*scale/3))),cancel))return {};
+        const double area=double(physicalWidth)*physicalHeight/(double(field->width)*field->height);
+        for(auto& value:field->values){value=float(value/area);field->maximum=std::max(field->maximum,double(value));}
+        return field;
+    }
+    field->columns=(physicalWidth+settings.cellSize-1)/settings.cellSize;
+    field->rows=(physicalHeight+settings.cellSize-1)/settings.cellSize;
+    field->cellCounts.resize(size_t(field->columns)*field->rows);
+    // Exact integer count per physical grid cell. No centroid relocation,
+    // Gaussian spreading, mirrored points, or cross-screen mixing.
     for(const auto& point:field->points){
         if(cancel())return {};
-        const double x=std::clamp((point.x+0.5)*width/physicalWidth-0.5,0.0,double(width-1)),y=std::clamp((point.y+0.5)*height/physicalHeight-0.5,0.0,double(height-1));
-        const int x0=int(x),y0=int(y),x1=std::min(x0+1,width-1),y1=std::min(y0+1,height-1);const double dx=x-x0,dy=y-y0,count=double(point.count);
-        field->values[size_t(y0)*width+x0]+=float(count*(1-dx)*(1-dy));field->values[size_t(y0)*width+x1]+=float(count*dx*(1-dy));
-        field->values[size_t(y1)*width+x0]+=float(count*(1-dx)*dy);field->values[size_t(y1)*width+x1]+=float(count*dx*dy);
+        const int x=std::clamp(point.x/settings.cellSize,0,field->columns-1),y=std::clamp(point.y/settings.cellSize,0,field->rows-1);
+        field->cellCounts[size_t(y)*field->columns+x]+=point.count;
     }
-    // The UI value is an influence radius, approximately 3 sigma, rather
-    // than sigma itself. Otherwise "28 px" visibly spreads over ~84 px.
-    const double sigma=double(settings.smoothing)/3.0;
-    auto horizontal=boxRadii(std::max(0.5,sigma*width/physicalWidth));
-    auto vertical=boxRadii(std::max(0.5,sigma*height/physicalHeight));
-    std::vector<float> temporary(field->values.size());
-    for(int pass=0;pass<3;++pass){
-        if(!blur(field->values,temporary,width,height,horizontal[pass],true,cancel)||!blur(temporary,field->values,width,height,vertical[pass],false,cancel))return {};
+    const double nominalArea=double(settings.cellSize)*settings.cellSize;
+    field->values.resize(field->cellCounts.size());
+    for(size_t i=0;i<field->values.size();++i){
+        field->values[i]=float(double(field->cellCounts[i])/nominalArea);
+        field->maximum=std::max(field->maximum,double(field->values[i]));
     }
-    // Values are clicks per physical pixel, so different screen resolutions
-    // and raster sizes can share a meaningful color scale.
-    const double pixelArea=double(physicalWidth)*physicalHeight/(double(width)*height);
-    for(auto& value:field->values){value=float(std::max(0.0,double(value))/pixelArea);field->maximum=std::max(field->maximum,double(value));}
     return field;
+}
+std::vector<float> rasterDensity(const HeatmapDensity& field,const Cancel& cancel){
+    if(!field.grid)return field.values;
+    std::vector<AxisBlend> xs(field.width),ys(field.height);
+    for(int x=0;x<field.width;++x)xs[x]=boundaryBlend((x+0.5)*field.screen.width/field.width,field.screen.width,field.cellSize,field.edgeBlend);
+    for(int y=0;y<field.height;++y)ys[y]=boundaryBlend((y+0.5)*field.screen.height/field.height,field.screen.height,field.cellSize,field.edgeBlend);
+    std::vector<float> pixels(size_t(field.width)*field.height);
+    for(int y=0;y<field.height;++y){
+        if(cancel())return {};
+        const auto& by=ys[y];
+        for(int x=0;x<field.width;++x){
+            const auto& bx=xs[x];
+            const double top=field.values[size_t(by.first)*field.columns+bx.first]*(1-bx.mix)+field.values[size_t(by.first)*field.columns+bx.second]*bx.mix;
+            const double bottom=field.values[size_t(by.second)*field.columns+bx.first]*(1-bx.mix)+field.values[size_t(by.second)*field.columns+bx.second]*bx.mix;
+            pixels[size_t(y)*field.width+x]=float(top*(1-by.mix)+bottom*by.mix);
+        }
+    }
+    return pixels;
 }
 std::array<QRgb,1024> palette(){
     const std::array<QColor,6> colors={QColor("#101187"),QColor("#0758ab"),QColor("#009f91"),QColor("#49bd48"),QColor("#e4e42c"),QColor("#f02b1c")};
@@ -89,7 +123,8 @@ std::shared_ptr<const HeatmapBatch> render(const std::shared_ptr<const HeatmapSo
             for(const auto& old:previous->frames)if(old.density==frame.density){frame.levels=old.levels;reused=true;break;}
         if(reused)continue;
         const auto& field=*frame.density;
-        const std::vector<float>* values=&field.values;
+        auto native=rasterDensity(field,cancel);if(cancel())return {};
+        const std::vector<float>* values=&native;
         std::vector<float> reduced;
         int width=field.width,height=field.height;
         for(;;){
@@ -130,7 +165,8 @@ std::shared_ptr<const HeatmapBatch> render(const std::shared_ptr<const HeatmapSo
 HeatmapRenderer::HeatmapRenderer(QObject* parent):QObject(parent){worker_=std::thread([this]{run();});}
 HeatmapRenderer::~HeatmapRenderer(){stopping_=true;wake_.notify_one();if(worker_.joinable())worker_.join();}
 void HeatmapRenderer::request(std::shared_ptr<const HeatmapSources> sources,HeatmapSettings settings,quint64 scope,std::shared_ptr<const HeatmapBatch> seed){
-    settings.button=settings.button==0||settings.button==1?settings.button:-1;settings.smoothing=std::clamp(settings.smoothing,1,200);settings.strength=std::clamp(settings.strength,25,400);
+    settings.button=settings.button==0||settings.button==1?settings.button:-1;settings.cellSize=std::clamp(settings.cellSize,5,100);settings.edgeBlend=std::clamp(settings.edgeBlend,0,4);settings.strength=std::clamp(settings.strength,25,400);
+    settings.radius=std::clamp(settings.radius,1,200);
     settings_=settings;scope_=scope;
     {std::lock_guard lock(mutex_);pending_=Job{std::move(sources),settings,scope,++serial_,generation_.load(),std::move(seed)};}wake_.notify_one();
 }

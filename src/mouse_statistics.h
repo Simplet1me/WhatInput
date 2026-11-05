@@ -16,13 +16,16 @@ public:
     void setStatistics(const wi::ViewResult& result);
     void clearRendering();
     QComboBox* softwareFilter()const{return softwareFilter_;}
+    void setGridMode(bool grid);
 private:
     QGridLayout* screens_;
     QTableWidget* ratios_;
     QLabel* empty_;
     QComboBox* buttonFilter_;
     QComboBox* softwareFilter_;
+    QSpinBox *gridSize_, *edgeBlend_;
     QSpinBox* radius_;
+    bool gridMode_=true;
     QComboBox* scaleMode_;
     QSpinBox* strength_;
     HeatmapRenderer* renderer_;

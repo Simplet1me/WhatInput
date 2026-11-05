@@ -326,6 +326,11 @@ StatsWindow::StatsWindow(wi::Engine &engine, QString root, QWidget *parent)
     timeFields->addWidget(rangeEnd_);
     timeFields->addWidget(applyRange);
     timeFields->addStretch();
+    mouseHeatmapMode_=new QComboBox(timePanel_);
+    mouseHeatmapMode_->addItems({"网格热力图","普通热力图"});
+    mouseHeatmapMode_->setAccessibleName("鼠标热力图模式");
+    mouseHeatmapMode_->hide();
+    timeFields->addWidget(mouseHeatmapMode_);
     timeLayout->addLayout(timeFields);
     timePanel_->hide();
     homeLayout->addWidget(timePanel_);
@@ -447,6 +452,7 @@ StatsWindow::StatsWindow(wi::Engine &engine, QString root, QWidget *parent)
     keyboardPanel_->hide();
     homeLayout->addWidget(keyboardPanel_, 1);
     mouseStatistics_=new MouseStatistics(home);mouseStatistics_->hide();homeLayout->addWidget(mouseStatistics_,1);
+    connect(mouseHeatmapMode_,&QComboBox::currentIndexChanged,this,[this](int index){mouseStatistics_->setGridMode(index==0);});
     connect(mouseStatistics_->softwareFilter(),&QComboBox::currentIndexChanged,this,[this]{if(mouseMode_)query();});
     activityPanel_ = new QFrame(home);
     activityPanel_->setObjectName("panel");
@@ -635,6 +641,7 @@ void StatsWindow::selectPage(int index) {
     cardsPanel_->setVisible(!keyboardMode_&&!mouseMode_);
     keyboardPanel_->setVisible(keyboardMode_);
     mouseStatistics_->setVisible(mouseMode_);
+    mouseHeatmapMode_->setVisible(mouseMode_);
     timePanel_->setVisible(historyMode_ || keyboardMode_ || mouseMode_);
     activityPanel_->setVisible(historyMode_);
     dashboard_->setMinimumHeight(historyMode_ ? 860 : 0);

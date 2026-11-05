@@ -46,6 +46,7 @@ class StatsWindow : public QMainWindow {
     QComboBox *appFilter_, *deviceFilter_, *softwareDeviceFilter_;
     QComboBox *activityAppFilter_, *activityDeviceFilter_, *period_;
     QComboBox *keyboardAppFilter_;
+    QComboBox* mouseHeatmapMode_;
     QDateTimeEdit *rangeStart_, *rangeEnd_;
     QWidget *timePanel_, *activityPanel_, *formula_, *dashboard_;
     QWidget *cardsPanel_, *keyboardPanel_;

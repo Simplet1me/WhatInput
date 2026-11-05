@@ -10,16 +10,21 @@
 #include <thread>
 
 struct HeatmapSettings {
-    int button=-1, smoothing=24, strength=100;
+    int button=-1, cellSize=10, strength=100;
     bool logarithmic=true;
+    int edgeBlend=0;
+    bool grid=true;
+    int radius=24;
     bool operator==(const HeatmapSettings&)const=default;
 };
 using HeatmapSources=std::vector<wi::ViewResult::MouseScreen>;
 struct HeatmapDensity {
     wi::MousePosition screen;
-    int width=0,height=0,button=-1,smoothing=24;
+    int width=0,height=0,button=-1,cellSize=10,edgeBlend=0,columns=0,rows=0,radius=24;
+    bool grid=true;
     std::vector<wi::ViewResult::MousePoint> points;
     std::vector<float> values;
+    std::vector<wi::Count> cellCounts;
     double maximum=0;
 };
 struct HeatmapFrame {
