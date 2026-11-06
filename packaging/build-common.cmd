@@ -4,7 +4,9 @@ set "BUILD_MODE=%~1"
 if not "%BUILD_MODE%"=="dev" if not "%BUILD_MODE%"=="release" exit /b 1
 set VSLANG=1033
 cd /d "%~dp0.."
-set /p "APP_VERSION=" < VERSION
+set "APP_VERSION="
+for /f "delims=" %%V in ('powershell -NoProfile -ExecutionPolicy Bypass -File packaging\read-version.ps1') do set "APP_VERSION=%%V"
+if not defined APP_VERSION exit /b 1
 set "BUILD_DIR=%CD%\build\%BUILD_MODE%"
 set "STAGE_DIR=%CD%\build\package-%BUILD_MODE%"
 if not defined VCVARS set "VCVARS=F:\Program Files\Microsoft Visual Studio\18\Insiders\VC\Auxiliary\Build\vcvars64.bat"

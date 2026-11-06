@@ -39,7 +39,7 @@ release/
 
 ## 构建与发布
 
-当前版本为 **0.1.0**，版本号统一保存在根目录 `VERSION`。依赖 Qt 6.8.3 MSVC2022 x64、CMake、Ninja、MSVC 和 Windows SDK；本机默认路径已写入构建脚本，也可用 `VCVARS`、`QT_ROOT` 环境变量指定。
+当前版本为 **0.1.0**，版本号统一读取根目录 `release.md` 首行标题，该文档仅保存当前版本内容，完整历史保存在 `Logs.md`。依赖 Qt 6.8.3 MSVC2022 x64、CMake、Ninja、MSVC 和 Windows SDK；本机默认路径已写入构建脚本，也可用 `VCVARS`、`QT_ROOT` 环境变量指定。
 
 - 开发版：运行 `packaging/build-dev.cmd`，干净编译后更新 `dev_release/`，保留个人数据、配置、缓存、日志和导出。原 `packaging/build.cmd` 仅转发到开发版。
 - 发布版：仅由用户亲自运行 `packaging/build-release.cmd`，输入 `PUBLISH` 后重新编译，输出到 `release/0.1.0/`。助手不得直接或间接运行发布构建。

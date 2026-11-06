@@ -1,8 +1,7 @@
 param([ValidateSet('dev','release')][string]$Mode='dev',[switch]$Prepare)
 $ErrorActionPreference='Stop'
 $workspace=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$version=(Get-Content -LiteralPath (Join-Path $workspace 'VERSION') -Raw).Trim()
-if($version -notmatch '^\d+\.\d+\.\d+$'){throw 'Invalid VERSION; expected major.minor.patch.'}
+$version=& (Join-Path $PSScriptRoot 'read-version.ps1')
 $stage=[IO.Path]::GetFullPath((Join-Path $workspace "build/package-$Mode"))
 $destination=if($Mode -eq 'dev'){Join-Path $workspace 'dev_release'}else{Join-Path $workspace "release/$version"}
 function Assert-Within([string]$Path,[string]$Parent){
@@ -17,7 +16,7 @@ function Assert-Within([string]$Path,[string]$Parent){
 }
 Assert-Within $stage $workspace
 Assert-Within $destination $workspace
-if($Mode -eq 'release' -and (Test-Path -LiteralPath $destination)){throw "Release already exists; remove it personally or change VERSION: $destination"}
+if($Mode -eq 'release' -and (Test-Path -LiteralPath $destination)){throw "Release already exists; remove it personally or update release.md: $destination"}
 if($Prepare){
     if(Test-Path -LiteralPath $stage){Remove-Item -LiteralPath $stage -Recurse -Force}
     New-Item -ItemType Directory -Path $stage -Force | Out-Null
