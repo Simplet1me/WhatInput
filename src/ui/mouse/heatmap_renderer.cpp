@@ -1,6 +1,7 @@
 #include "ui/mouse/heatmap_renderer.h"
 #include <QMetaObject>
 #include <QColor>
+#include "ui/heat_scale.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -106,10 +107,8 @@ std::vector<float> rasterDensity(const HeatmapDensity& field,const Cancel& cance
     return pixels;
 }
 std::array<QRgb,1024> palette(){
-    const std::array<QColor,6> colors={QColor("#101187"),QColor("#0758ab"),QColor("#009f91"),QColor("#49bd48"),QColor("#e4e42c"),QColor("#f02b1c")};
     std::array<QRgb,1024> result{};
-    for(int i=0;i<1024;++i){const double position=double(i)/1023*5;const int at=std::min(4,int(position));const double t=position-at;
-        result[i]=qRgb(int(colors[at].red()*(1-t)+colors[at+1].red()*t),int(colors[at].green()*(1-t)+colors[at+1].green()*t),int(colors[at].blue()*(1-t)+colors[at+1].blue()*t));}
+    for(int i=0;i<1024;++i)result[i]=heatColor(double(i)/1023).rgb();
     return result;
 }
 std::shared_ptr<const HeatmapBatch> render(const std::shared_ptr<const HeatmapSources>& sources,const HeatmapSettings& settings,const std::shared_ptr<const HeatmapBatch>& previous,const Cancel& cancel){

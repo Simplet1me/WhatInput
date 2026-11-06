@@ -1,5 +1,6 @@
 #include "ui/mouse/mouse_statistics.h"
 #include <QDialog>
+#include "ui/heat_scale.h"
 #include <QGuiApplication>
 #include <QScreen>
 #include <QWindow>
@@ -52,17 +53,40 @@ bool sameSources(const HeatmapSources& a,const HeatmapSources& b){
     return true;
 }
 }
+class ScreenArrangement : public QWidget {
+public:
+    bool physical=false;
+    std::vector<std::pair<QWidget*,QRect>> entries;
+    using QWidget::QWidget;
+    void arrange(){
+        if(entries.empty())return;
+        QRect bounds;for(auto& entry:entries)bounds=bounds.united(entry.second);
+        const double scale=std::min(double(std::max(1,width()-24))/std::max(1,bounds.width()),double(std::max(1,height()-24))/std::max(1,bounds.height()));
+        int i=0;for(auto& [widget,area]:entries){
+            if(physical)widget->setGeometry(int((width()-bounds.width()*scale)/2+(area.x()-bounds.x())*scale),int((height()-bounds.height()*scale)/2+(area.y()-bounds.y())*scale),int(area.width()*scale),int(area.height()*scale));
+            else {const int columns=std::min(2,int(entries.size())),rows=(int(entries.size())+columns-1)/columns;widget->setGeometry(i%columns*width()/columns,i/columns*height()/rows,width()/columns,height()/rows);}
+            widget->show();++i;
+        }
+    }
+protected:void resizeEvent(QResizeEvent*)override{arrange();}
+};
+class MouseLegend : public QWidget {
+public:
+    double maximum=0;bool grid=true;
+    explicit MouseLegend(QWidget* parent):QWidget(parent){setFixedHeight(40);}
+protected:void paintEvent(QPaintEvent*)override{QPainter p(this);paintHeatLegend(p,width(),maximum,grid?"次/格":"次/px²");}
+};
 class MouseHeatmapTile : public QWidget {
 public:
     std::function<void()> clicked;
     bool fullscreen=false,showOriginalPoints=false;
     double heatOpacity=1.0;
     HeatmapFrame frame;
-    explicit MouseHeatmapTile(QWidget* parent=nullptr):QWidget(parent){setMinimumSize(300,220);setMouseTracking(true);setCursor(Qt::PointingHandCursor);}
+    explicit MouseHeatmapTile(QWidget* parent=nullptr):QWidget(parent){setMinimumSize(80,60);setMouseTracking(true);setCursor(Qt::PointingHandCursor);}
     void setFrame(HeatmapFrame value){frame=std::move(value);update();}
 protected:
     QRectF mapRect()const{
-        QRectF available=fullscreen?QRectF(rect()):QRectF(rect()).adjusted(8,8,-8,-8);
+        QRectF available=fullscreen?QRectF(rect()):QRectF(rect()).adjusted(8,36,-8,-8);
         const double ratio=frame.density?double(std::max(1,frame.density->screen.width))/std::max(1,frame.density->screen.height):16.0/9;
         double w=available.width(),h=w/ratio;if(h>available.height()){h=available.height();w=h*ratio;}
         return {available.center().x()-w/2,available.center().y()-h/2,w,h};
@@ -73,6 +97,7 @@ protected:
         else painter.fillRect(rect(),QColor("#17232e"));
         if(!frame.density||frame.levels.empty())return;
         const auto area=mapRect();
+        if(!fullscreen){painter.setPen(QColor("#b9cbd5"));const auto& screen=frame.density->screen;painter.drawText(QRectF(area.left(),area.top()-30,area.width(),24),Qt::AlignCenter,displayName(QString::fromStdString(screen.screenName))+QString(" · %1 × %2").arg(screen.width).arg(screen.height));}
         if(!fullscreen){painter.setPen(Qt::NoPen);painter.setBrush(QColor("#05080c"));painter.drawRoundedRect(area.adjusted(-5,-5,5,5),8,8);}
         // Pick a pyramid level for the actual display density. The full view
         // uses the same field and colors, never a separately normalized image.
@@ -150,19 +175,21 @@ public:
     }
 };
 MouseStatistics::MouseStatistics(QWidget* parent):QWidget(parent){
-    auto layout=new QHBoxLayout(this);layout->setContentsMargins(0,0,0,0);layout->setSpacing(28);
+    auto layout=new QHBoxLayout(this);layout->setContentsMargins(0,0,0,0);layout->setSpacing(20);
     auto mapPanel=new QFrame(this);mapPanel->setObjectName("panel");auto maps=new QVBoxLayout(mapPanel);maps->setContentsMargins(20,20,20,20);
     auto titleRow=new QHBoxLayout;auto title=new QLabel("鼠标点击热力图",mapPanel);title->setObjectName("sectionTitle");titleRow->addWidget(title);titleRow->addStretch();
     softwareFilter_=new QComboBox(mapPanel);softwareFilter_->addItem("全部软件","");softwareFilter_->setIconSize(QSize(22,22));softwareFilter_->setMinimumContentsLength(8);softwareFilter_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);softwareFilter_->setMaximumWidth(240);softwareFilter_->view()->setMinimumWidth(320);softwareFilter_->setAccessibleName("鼠标统计软件筛选");titleRow->addWidget(softwareFilter_);
     buttonFilter_=buttonChoices(mapPanel);titleRow->addWidget(buttonFilter_);maps->addLayout(titleRow);
-    auto parameters=new QHBoxLayout;parameters->setSpacing(8);parameters->addWidget(new QLabel("网格",mapPanel));gridSize_=gridControl(mapPanel);parameters->addWidget(gridSize_);
+    auto displayOptions=new QToolButton(mapPanel);displayOptions->setText("显示设置");displayOptions->setCheckable(true);titleRow->addWidget(displayOptions);
+    auto options=new QWidget(mapPanel);auto parameters=new QHBoxLayout(options);parameters->setContentsMargins(0,0,0,0);parameters->setSpacing(8);parameters->addWidget(new QLabel("网格",mapPanel));gridSize_=gridControl(mapPanel);parameters->addWidget(gridSize_);
     parameters->addWidget(new QLabel("衔接",mapPanel));edgeBlend_=edgeControl(mapPanel);parameters->addWidget(edgeBlend_);
     parameters->addWidget(new QLabel("平滑",mapPanel));radius_=radiusControl(mapPanel);radius_->setEnabled(false);parameters->addWidget(radius_);
-    scaleMode_=scaleChoices(mapPanel);parameters->addWidget(scaleMode_);parameters->addWidget(new QLabel("强度",mapPanel));strength_=strengthControl(mapPanel);parameters->addWidget(strength_);parameters->addStretch();maps->addLayout(parameters);
+    scaleMode_=scaleChoices(mapPanel);parameters->addWidget(scaleMode_);parameters->addWidget(new QLabel("强度",mapPanel));strength_=strengthControl(mapPanel);parameters->addWidget(strength_);parameters->addStretch();maps->addWidget(options);options->hide();connect(displayOptions,&QToolButton::toggled,options,&QWidget::setVisible);
+    auto arrangementRow=new QHBoxLayout;auto arrangement=new QComboBox(mapPanel);arrangement->addItems({"并排查看","实际位置"});arrangementRow->addWidget(arrangement);arrangementRow->addStretch();legend_=new MouseLegend(mapPanel);legend_->setMinimumWidth(340);arrangementRow->addWidget(legend_);maps->addLayout(arrangementRow);
     auto apply=[this]{requestRendering();};QObject::connect(buttonFilter_,&QComboBox::currentIndexChanged,this,apply);QObject::connect(gridSize_,&QSpinBox::valueChanged,this,apply);QObject::connect(edgeBlend_,&QSpinBox::valueChanged,this,apply);
     QObject::connect(scaleMode_,&QComboBox::currentIndexChanged,this,apply);QObject::connect(strength_,&QSpinBox::valueChanged,this,apply);
     QObject::connect(radius_,&QSpinBox::valueChanged,this,apply);
-    screens_=new QGridLayout;maps->addLayout(screens_,1);empty_=new QLabel("暂无点击位置",mapPanel);empty_->setAlignment(Qt::AlignCenter);maps->addWidget(empty_,1);layout->addWidget(mapPanel,1);
+    screens_=new ScreenArrangement(mapPanel);screens_->setMinimumHeight(220);maps->addWidget(screens_,1);connect(arrangement,&QComboBox::currentIndexChanged,this,[this](int index){screens_->physical=index==1;screens_->arrange();});empty_=new QLabel("暂无点击位置",mapPanel);empty_->setAlignment(Qt::AlignCenter);maps->addWidget(empty_,1);layout->addWidget(mapPanel,1);
     auto ratioPanel=new QFrame(this);ratioPanel->setObjectName("panel");ratioPanel->setFixedWidth(290);auto ratioLayout=new QVBoxLayout(ratioPanel);ratioLayout->setContentsMargins(14,20,14,20);
     auto heading=new QLabel("鼠标操作占比",ratioPanel);heading->setObjectName("sectionTitle");ratioLayout->addWidget(heading);
     ratios_=new QTableWidget(0,3,ratioPanel);ratios_->setHorizontalHeaderLabels({"操作","次数","占比"});ratios_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);ratios_->verticalHeader()->hide();ratios_->verticalHeader()->setDefaultSectionSize(36);ratios_->setShowGrid(false);ratios_->setEditTriggers(QAbstractItemView::NoEditTriggers);ratios_->setSelectionMode(QAbstractItemView::NoSelection);ratioLayout->addWidget(ratios_,1);layout->addWidget(ratioPanel);
@@ -172,21 +199,21 @@ void MouseStatistics::setGridMode(bool grid){gridMode_=grid;gridSize_->setEnable
 HeatmapSettings MouseStatistics::settings()const{return {buttonFilter_->currentData().toInt(),gridSize_->value(),strength_->value(),scaleMode_->currentData().toBool(),edgeBlend_->value(),gridMode_,radius_->value()};}
 void MouseStatistics::requestRendering(){if(sources_)renderer_->request(sources_,settings(),scope_,batch_);}
 void MouseStatistics::showBatch(std::shared_ptr<const HeatmapBatch> batch){
-    batch_=std::move(batch);QSet<QString> keep;int index=0;
+    batch_=std::move(batch);QSet<QString> keep;
+    auto legend=static_cast<MouseLegend*>(legend_);legend->maximum=batch_->sharedMaximum/(batch_->settings.strength/100.0);legend->grid=batch_->settings.grid;legend->setToolTip("所有显示器共用当前筛选的色阶；"+QString(batch_->settings.logarithmic?"对数映射":"线性映射"));legend->update();screens_->entries.clear();
     for(const auto& frame:batch_->frames){
         const auto& screen=frame.density->screen;const auto id=screenKey(screen);keep.insert(id);auto tile=tiles_.value(id,nullptr);
         if(!tile){
-            auto container=new QWidget(this);auto layout=new QVBoxLayout(container);layout->setContentsMargins(0,0,0,0);
-            auto label=new QLabel(displayName(QString::fromStdString(screen.screenName))+QString(" · %1 × %2").arg(screen.width).arg(screen.height),container);label->setAlignment(Qt::AlignCenter);layout->addWidget(label);
+            auto container=new QWidget(screens_);auto layout=new QVBoxLayout(container);layout->setContentsMargins(0,0,0,0);
             tile=new MouseHeatmapTile(container);tile->setObjectName("mouseHeatmap");tile->clicked=[this,tile]{
                 if(!batch_||!tile->frame.density)return;
                 wi::ViewResult::MouseScreen selected;selected.screen=tile->frame.density->screen;openFullscreen(selected);
             };layout->addWidget(tile,1);tiles_.insert(id,tile);
         }
-        tile->setFrame(frame);screens_->addWidget(tile->parentWidget(),index/2,index%2);++index;
+        tile->setFrame(frame);screens_->entries.push_back({tile->parentWidget(),QRect(screen.left,screen.top,screen.width,screen.height)});
     }
-    const auto ids=tiles_.keys();for(const auto& id:ids)if(!keep.contains(id)){auto tile=tiles_.take(id);screens_->removeWidget(tile->parentWidget());delete tile->parentWidget();}
-    empty_->setVisible(tiles_.isEmpty());
+    const auto ids=tiles_.keys();for(const auto& id:ids)if(!keep.contains(id)){auto tile=tiles_.take(id);delete tile->parentWidget();}
+    screens_->arrange();screens_->setVisible(!tiles_.isEmpty());empty_->setVisible(tiles_.isEmpty());
 }
 void MouseStatistics::setStatistics(const wi::ViewResult& result){
     const bool changed=scope_!=result.request||!sources_||!sameSources(*sources_,result.mouseScreens);scope_=result.request;
@@ -200,9 +227,12 @@ void MouseStatistics::setStatistics(const wi::ViewResult& result){
         for(auto i:items){ratios_->setItem(row,0,new QTableWidgetItem(labels[i]));ratios_->setItem(row,1,new QTableWidgetItem(number(counts[i])));ratios_->setItem(row,2,new QTableWidgetItem(QString::number(total?double(counts[i])*100/double(total):0,'f',2)+"%"));++row;}
     };
     group("左右键占比",{0,1});group("滚轮上下占比",{2,3});group("左右键与滚轮合计占比",{0,1,2,3});
+    for(int c=0;c<3;++c)ratios_->horizontalHeaderItem(c)->setTextAlignment((c?Qt::AlignRight:Qt::AlignLeft)|Qt::AlignVCenter);
+    for(int r=0;r<ratios_->rowCount();++r)for(int c=1;c<3;++c)if(auto item=ratios_->item(r,c))item->setTextAlignment(Qt::AlignRight|Qt::AlignVCenter);
 }
 void MouseStatistics::clearRendering(){
     renderer_->clear();sources_.reset();batch_.reset();
+    screens_->entries.clear();
     for(auto tile:tiles_)delete tile->parentWidget();tiles_.clear();empty_->show();
     ratios_->clearSpans();ratios_->setRowCount(0);
 }

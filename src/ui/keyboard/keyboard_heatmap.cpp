@@ -1,5 +1,6 @@
 #include "ui/keyboard/keyboard_heatmap.h"
 #include <QLocale>
+#include "ui/heat_scale.h"
 #include <QMouseEvent>
 #include <QPainter>
 #include <QToolTip>
@@ -114,32 +115,21 @@ void KeyboardHeatmap::setStatistics(const wi::ViewResult &result) {
     update();
 }
 QRectF KeyboardHeatmap::screenBounds(const Key &key) const {
-    const double unit = std::min((width() - 24) / 23.2, (height() - 24) / 6.25);
+    const double unit = std::min((width() - 24) / 23.2, (height() - 70) / 6.25);
     const double left = (width() - 23.2 * unit) / 2,
-                 top = (height() - 6.25 * unit) / 2;
+                 top = 50 + std::max(0.0,(height() - 70 - 6.25 * unit) / 4);
     return {left + key.bounds.x() * unit, top + key.bounds.y() * unit,
             key.bounds.width() * unit - 4, key.bounds.height() * unit - 4};
 }
 QColor KeyboardHeatmap::color(wi::Count count) const {
-    const double share = total_ ? double(count) / double(total_) : 0;
-    const double maximumShare = total_ ? double(maximum_) / double(total_) : 0;
-    const double strength = maximumShare ? std::sqrt(share / maximumShare) : 0;
-    const std::array<QColor, 6> colors = {QColor("#292343"), QColor("#163568"),
-                                          QColor("#145b73"), QColor("#267447"),
-                                          QColor("#8c7527"), QColor("#831d29")};
-    const double position = std::clamp(strength, 0.0, 1.0) * 5;
-    const auto index = std::min(4, int(position));
-    const double mix = position - index;
-    return QColor::fromRgbF(
-        colors[index].redF() * (1 - mix) + colors[index + 1].redF() * mix,
-        colors[index].greenF() * (1 - mix) + colors[index + 1].greenF() * mix,
-        colors[index].blueF() * (1 - mix) + colors[index + 1].blueF() * mix);
+    return heatColor(maximum_?double(count)/maximum_:0);
 }
 void KeyboardHeatmap::paintEvent(QPaintEvent *) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
     painter.fillRect(rect(), QColor("#17232e"));
-    const double unit = std::min((width() - 24) / 23.2, (height() - 24) / 6.25);
+    paintHeatLegend(painter,width(),double(maximum_));
+    const double unit = std::min((width() - 24) / 23.2, (height() - 70) / 6.25);
     for (int i = 0; i < int(keys_.size()); ++i) {
         const auto &key = keys_[i];
         const auto area = screenBounds(key);

@@ -3,7 +3,7 @@
 #include "ui/mouse/heatmap_renderer.h"
 #include <QWidget>
 #include <QHash>
-class QGridLayout;
+class ScreenArrangement;
 class QTableWidget;
 class QLabel;
 class QComboBox;
@@ -18,7 +18,8 @@ public:
     QComboBox* softwareFilter()const{return softwareFilter_;}
     void setGridMode(bool grid);
 private:
-    QGridLayout* screens_;
+    ScreenArrangement* screens_;
+    QWidget* legend_;
     QTableWidget* ratios_;
     QLabel* empty_;
     QComboBox* buttonFilter_;

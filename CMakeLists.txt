@@ -22,6 +22,7 @@ qt_add_executable(WhatInput WIN32
   src/capture/capture.cpp src/capture/capture.h
   src/engine/engine.cpp src/engine/engine.h
   src/platform/application_labels.cpp src/platform/application_labels.h
+  src/platform/autostart.cpp src/platform/autostart.h
   src/ui/window.cpp src/ui/window.h
   src/ui/keyboard/keyboard_heatmap.cpp src/ui/keyboard/keyboard_heatmap.h
   src/ui/mouse/mouse_statistics.cpp src/ui/mouse/mouse_statistics.h
@@ -31,7 +32,7 @@ qt_add_executable(WhatInput WIN32
   "${CMAKE_CURRENT_BINARY_DIR}/WhatInput.rc"
 )
 qt_add_resources(WhatInput application_icons PREFIX "/assets" BASE assets
-  FILES assets/WhatInput.ico assets/ICON.png)
+  FILES assets/WhatInput.ico assets/ICON.png assets/chevron.svg assets/up.svg)
 target_compile_definitions(WhatInput PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_link_libraries(WhatInput PRIVATE core Qt6::Widgets user32 advapi32 xinput9_1_0)
 install(TARGETS WhatInput RUNTIME DESTINATION .)

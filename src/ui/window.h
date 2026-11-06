@@ -8,6 +8,8 @@
 #include <QTimer>
 #include <optional>
 class QDateTimeEdit;
+class QCheckBox;
+class QButtonGroup;
 class QComboBox;
 class QLabel;
 class QPushButton;
@@ -48,7 +50,8 @@ class StatsWindow : public QMainWindow {
     QStackedWidget *pages_;
     QScrollArea* dashboardScroll_=nullptr;
     QComboBox *appFilter_, *deviceFilter_, *softwareDeviceFilter_;
-    QComboBox *activityAppFilter_, *period_;
+    QComboBox *activityAppFilter_;
+    QButtonGroup* period_;
     QComboBox *keyboardAppFilter_;
     QComboBox* mouseHeatmapMode_;
     QWidget* movementPanel_;
@@ -63,6 +66,7 @@ class StatsWindow : public QMainWindow {
     QWidget* combinationPanel_;
     QComboBox* combinationAppFilter_;
     QTableWidget* combinationTable_;
+    QCheckBox* preciseTime_;
     QDateTimeEdit *rangeStart_, *rangeEnd_;
     QWidget *timePanel_, *activityPanel_, *formula_, *dashboard_;
     QWidget *cardsPanel_, *keyboardPanel_;

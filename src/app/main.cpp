@@ -20,36 +20,6 @@
 #include <functional>
 
 namespace {
-bool autoStart() {
-    DWORD size = 0;
-    return RegGetValueW(HKEY_CURRENT_USER,
-                        L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-                        L"WhatInput", RRF_RT_REG_SZ, nullptr, nullptr,
-                        &size) == ERROR_SUCCESS;
-}
-bool setAutoStart(bool enabled, const QString &executable) {
-    HKEY key{};
-    if (RegCreateKeyExW(HKEY_CURRENT_USER,
-                        L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0,
-                        nullptr, 0, KEY_SET_VALUE, nullptr, &key,
-                        nullptr) != ERROR_SUCCESS)
-        return false;
-    LONG rc;
-    if (enabled) {
-        const auto value =
-            ("\"" + QDir::toNativeSeparators(executable) + "\" --background")
-                .toStdWString();
-        rc = RegSetValueExW(key, L"WhatInput", 0, REG_SZ,
-                            reinterpret_cast<const BYTE *>(value.c_str()),
-                            DWORD((value.size() + 1) * sizeof(wchar_t)));
-    } else {
-        rc = RegDeleteValueW(key, L"WhatInput");
-        if (rc == ERROR_FILE_NOT_FOUND)
-            rc = ERROR_SUCCESS;
-    }
-    RegCloseKey(key);
-    return rc == ERROR_SUCCESS;
-}
 QIcon applicationIcon() {
     return QIcon(":/assets/WhatInput.ico");
 }
@@ -133,9 +103,6 @@ int main(int argc, char **argv) {
     QMenu menu;
     auto showAction = menu.addAction("打开统计");
     auto saveAction = menu.addAction("立即保存");
-    auto startupAction = menu.addAction("开机自启");
-    startupAction->setCheckable(true);
-    startupAction->setChecked(autoStart());
     menu.addSeparator();
     auto quitAction = menu.addAction("退出");
     tray.setContextMenu(&menu);
@@ -157,14 +124,6 @@ int main(int argc, char **argv) {
     QObject::connect(saveAction, &QAction::triggered, &engine,
                      &wi::Engine::flush);
     QObject::connect(quitAction, &QAction::triggered, &app, quit);
-    QObject::connect(
-        startupAction, &QAction::triggered, &app, [&](bool enabled) {
-            if (!setAutoStart(enabled, QString::fromWCharArray(executable))) {
-                startupAction->setChecked(autoStart());
-                QMessageBox::warning(&window, "开机自启",
-                                     "无法更新当前用户的开机自启设置。");
-            }
-        });
     QObject::connect(&tray, &QSystemTrayIcon::activated, &window,
                      [&](QSystemTrayIcon::ActivationReason reason) {
                          if (reason == QSystemTrayIcon::DoubleClick)
