@@ -71,35 +71,45 @@ struct ViewCache {
     ViewFilter filter;
     std::map<std::pair<std::string, std::string>, RankedControl> controls;
     std::map<Count, Count> activeMinutes;
-    std::map<Count,std::array<Count,3>> activityDevices;
+    std::map<Count, std::array<Count, 3>> activityDevices;
     Count activityTotal = 0;
     std::map<std::string, Count> software;
     std::map<std::string, Count> movement;
-    std::map<std::string,RankedControl> combinations;
+    std::map<std::string, RankedControl> combinations;
     std::map<std::string, std::string> apps;
-    std::map<MousePosition,std::map<std::tuple<int,int,int>,Count>> mousePoints;
+    std::map<MousePosition, std::map<std::tuple<int, int, int>, Count>>
+        mousePoints;
     Count total = 0;
     QDate today = QDate::currentDate();
     Count todayStart = today.startOfDay().toSecsSinceEpoch();
     Count todayEnd = today.addDays(1).startOfDay().toSecsSinceEpoch();
     Count todayMouse = 0, todayKeyboard = 0, todayGamepad = 0;
     bool valid = false;
-    void addMouse(const MousePosition& position,const std::string& control,Count count){
-        if(!filter.mouseDetails||!control.starts_with("mouse:button:"))return;
-        auto screen=position;screen.x=screen.y=0;
-        const int button=control.back()-'0';
-        mousePoints[screen][{position.x,position.y,button}]+=count;
+    void addMouse(const MousePosition &position, const std::string &control,
+                  Count count) {
+        if (!filter.mouseDetails || !control.starts_with("mouse:button:"))
+            return;
+        auto screen = position;
+        screen.x = screen.y = 0;
+        const int button = control.back() - '0';
+        mousePoints[screen][{position.x, position.y, button}] += count;
     }
     void add(const Entry &e) {
         apps[e.key.app] = e.appName;
-        if(e.key.type=="keyboard_combo"){
-            if(e.key.second>=filter.start&&e.key.second<filter.end&&(filter.app.empty()||filter.app==e.key.app)){
-                auto& row=combinations[e.key.control];row.type=e.key.type;row.control=e.key.control;row.name=e.controlName;row.count+=e.count;
+        if (e.key.type == "keyboard_combo") {
+            if (e.key.second >= filter.start && e.key.second < filter.end &&
+                (filter.app.empty() || filter.app == e.key.app)) {
+                auto &row = combinations[e.key.control];
+                row.type = e.key.type;
+                row.control = e.key.control;
+                row.name = e.controlName;
+                row.count += e.count;
             }
             return;
         }
-        if(e.key.type=="mouse_move"){
-            if(e.key.second>=filter.start&&e.key.second<filter.end)movement[e.key.app]+=e.count;
+        if (e.key.type == "mouse_move") {
+            if (e.key.second >= filter.start && e.key.second < filter.end)
+                movement[e.key.app] += e.count;
             return;
         }
         // Daily totals are independent of both ranking filters. Use local
@@ -125,13 +135,17 @@ struct ViewCache {
             const auto local =
                 QDateTime::fromSecsSinceEpoch(e.key.second).toLocalTime();
             activeMinutes[e.key.second - local.time().second()] += e.count;
-            const int device=e.key.type=="mouse"?0:e.key.type=="keyboard"?1:2;
-            activityDevices[e.key.second-local.time().second()][device]+=e.count;
+            const int device = e.key.type == "mouse"      ? 0
+                               : e.key.type == "keyboard" ? 1
+                                                          : 2;
+            activityDevices[e.key.second - local.time().second()][device] +=
+                e.count;
             activityTotal += e.count;
         }
         if (!matches(e.key, filter))
             return;
-        if(e.key.mouse)addMouse(*e.key.mouse,e.key.control,e.count);
+        if (e.key.mouse)
+            addMouse(*e.key.mouse, e.key.control, e.count);
         auto id = std::make_pair(e.key.type, e.key.control);
         auto [it, inserted] = controls.try_emplace(
             id, RankedControl{e.key.type, e.key.control, e.controlName, 0});
@@ -147,18 +161,37 @@ struct ViewCache {
         out->todayGamepad = todayGamepad;
         out->applications = apps;
         out->updated = QDateTime::currentDateTime();
-        for(const auto& [id,row]:combinations)out->combinations.push_back(row);
-        std::sort(out->combinations.begin(),out->combinations.end(),[](const auto& a,const auto& b){return a.count!=b.count?a.count>b.count:a.control<b.control;});
-        for(const auto& [id,distance]:movement)out->movement.push_back({id,apps.at(id),distance});
-        std::sort(out->movement.begin(),out->movement.end(),[](const auto& a,const auto& b){return a.count>b.count;});
+        for (const auto &[id, row] : combinations)
+            out->combinations.push_back(row);
+        std::sort(out->combinations.begin(), out->combinations.end(),
+                  [](const auto &a, const auto &b) {
+                      return a.count != b.count ? a.count > b.count
+                                                : a.control < b.control;
+                  });
+        for (const auto &[id, distance] : movement)
+            out->movement.push_back({id, apps.at(id), distance});
+        std::sort(
+            out->movement.begin(), out->movement.end(),
+            [](const auto &a, const auto &b) { return a.count > b.count; });
         out->rangeStart = filter.start;
         out->rangeEnd = filter.end;
-        for(const auto& [screen,points]:mousePoints){
-            ViewResult::MouseScreen map;map.screen=screen;
-            for(const auto& [point,count]:points){map.points.push_back({std::get<0>(point),std::get<1>(point),count,std::get<2>(point)});map.total+=count;}
+        for (const auto &[screen, points] : mousePoints) {
+            ViewResult::MouseScreen map;
+            map.screen = screen;
+            for (const auto &[point, count] : points) {
+                map.points.push_back({std::get<0>(point), std::get<1>(point),
+                                      count, std::get<2>(point)});
+                map.total += count;
+            }
             out->mouseScreens.push_back(std::move(map));
         }
-        std::sort(out->mouseScreens.begin(),out->mouseScreens.end(),[](const auto& left,const auto& right){return std::tie(left.screen.left,left.screen.top,left.screen.width)<std::tie(right.screen.left,right.screen.top,right.screen.width);});
+        std::sort(out->mouseScreens.begin(), out->mouseScreens.end(),
+                  [](const auto &left, const auto &right) {
+                      return std::tie(left.screen.left, left.screen.top,
+                                      left.screen.width) <
+                             std::tie(right.screen.left, right.screen.top,
+                                      right.screen.width);
+                  });
         out->activityTotal = activityTotal;
         out->activeMinutes = Count(activeMinutes.size());
         for (const auto &[minute, count] : activeMinutes) {
@@ -180,16 +213,25 @@ struct ViewCache {
                                  : std::tie(a.type, a.control) <
                                        std::tie(b.type, b.control);
                   });
-        out->activityGrouping=filter.activityGrouping;
-        std::map<Count,HourCount> buckets;
-        for(const auto& [minute,devices]:activityDevices){
-            const auto boundary=activityFloor(QDateTime::fromSecsSinceEpoch(minute).toLocalTime(),filter.activityGrouping);
-            const auto end=activityNext(boundary,filter.activityGrouping).toSecsSinceEpoch();
-            auto& bucket=buckets[boundary.toSecsSinceEpoch()];
-            bucket.start=std::max(boundary.toSecsSinceEpoch(),filter.start);bucket.end=std::min(end,filter.end);
-            for(int i=0;i<3;++i){bucket.series[i+1]+=devices[i];bucket.series[0]+=devices[i];bucket.count+=devices[i];}
+        out->activityGrouping = filter.activityGrouping;
+        std::map<Count, HourCount> buckets;
+        for (const auto &[minute, devices] : activityDevices) {
+            const auto boundary = activityFloor(
+                QDateTime::fromSecsSinceEpoch(minute).toLocalTime(),
+                filter.activityGrouping);
+            const auto end = activityNext(boundary, filter.activityGrouping)
+                                 .toSecsSinceEpoch();
+            auto &bucket = buckets[boundary.toSecsSinceEpoch()];
+            bucket.start = std::max(boundary.toSecsSinceEpoch(), filter.start);
+            bucket.end = std::min(end, filter.end);
+            for (int i = 0; i < 3; ++i) {
+                bucket.series[i + 1] += devices[i];
+                bucket.series[0] += devices[i];
+                bucket.count += devices[i];
+            }
         }
-        for(const auto& [start,bucket]:buckets)out->hours.push_back(bucket);
+        for (const auto &[start, bucket] : buckets)
+            out->hours.push_back(bucket);
         for (auto &[id, count] : software) {
             auto it = apps.find(id);
             out->software.push_back(
@@ -218,8 +260,13 @@ void merge(Buffer &destination, const Buffer &source) {
 Engine::Engine(QString root, int interval, QObject *parent)
     : QObject(parent), root_(std::move(root)) {
     status_.interval = std::clamp(interval, 1, 3600);
-    QFile mouseConfig(root_+"/config/mouse-distance.json");
-    if(mouseConfig.open(QIODevice::ReadOnly))mouseDpi_=std::clamp(QJsonDocument::fromJson(mouseConfig.readAll()).object().value("dpi").toInt(2000),50,100000);
+    QFile mouseConfig(root_ + "/config/mouse-distance.json");
+    if (mouseConfig.open(QIODevice::ReadOnly))
+        mouseDpi_ = std::clamp(QJsonDocument::fromJson(mouseConfig.readAll())
+                                   .object()
+                                   .value("dpi")
+                                   .toInt(2000),
+                               50, 100000);
     QFile stamp(root_ + "/config/last-save.json");
     if (QFile::exists(root_ + "/data/whatinput.sqlite3") &&
         stamp.open(QIODevice::ReadOnly))
@@ -249,8 +296,10 @@ void Engine::record(const std::string &type, const std::string &control,
     if (count <= 0)
         return;
     Key k{nowSecond(), categoryId(type), type, control, app};
-    if(type=="mouse_move")k.second-=k.second%60;
-    if(type=="mouse")k.mouse=std::move(position);
+    if (type == "mouse_move")
+        k.second -= k.second % 60;
+    if (type == "mouse")
+        k.mouse = std::move(position);
     Entry entry{k, categoryName(type), name, appName, count};
     std::lock_guard lock(mutex_);
     if (finishRequested_)
@@ -562,9 +611,13 @@ void Engine::run() {
                     if (viewFilter.start == 0 && viewFilter.end == INT64_MAX) {
                         Count first = nowSecond(), last = first;
                         bool found = false;
-                        Query extent(db->handle(),
-                                     "SELECT MIN(second_utc),MAX(second_utc) "
-                                     "FROM (SELECT second_utc FROM counts UNION ALL SELECT minute_utc AS second_utc FROM mouse_movement UNION ALL SELECT second_utc FROM keyboard_combinations)");
+                        Query extent(
+                            db->handle(),
+                            "SELECT MIN(second_utc),MAX(second_utc) "
+                            "FROM (SELECT second_utc FROM counts UNION ALL "
+                            "SELECT minute_utc AS second_utc FROM "
+                            "mouse_movement UNION ALL SELECT second_utc FROM "
+                            "keyboard_combinations)");
                         if (extent.next() &&
                             sqlite3_column_type(extent.s, 0) != SQLITE_NULL) {
                             first = sqlite3_column_int64(extent.s, 0);
@@ -600,24 +653,65 @@ void Engine::run() {
                         cache.apps[apps.text(0)] = apps.text(1);
                     eachStored(*db, {viewFilter.start, viewFilter.end, "", ""},
                                [&](const Entry &e) { cache.add(e); });
-                    Query combos(db->handle(),"SELECT c.second_utc,c.identity,c.name,a.identity,a.name,c.press_count FROM keyboard_combinations c JOIN apps a ON a.id=c.app_id WHERE c.second_utc>=?1 AND c.second_utc<?2 AND (?3='' OR a.identity=?3)");
-                    sqlite3_bind_int64(combos.s,1,viewFilter.start);sqlite3_bind_int64(combos.s,2,viewFilter.end);combos.text(3,viewFilter.app);
-                    while(combos.next())cache.add(Entry{Key{sqlite3_column_int64(combos.s,0),"category:keyboard_combo","keyboard_combo",combos.text(1),combos.text(3)},"组合按键",combos.text(2),combos.text(4),sqlite3_column_int64(combos.s,5)});
-                    Query moves(db->handle(),"SELECT m.minute_utc,a.identity,a.name,m.distance_nanometers FROM mouse_movement m JOIN apps a ON a.id=m.app_id WHERE m.minute_utc>=?1 AND m.minute_utc<?2");
-                    sqlite3_bind_int64(moves.s,1,viewFilter.start);sqlite3_bind_int64(moves.s,2,viewFilter.end);
-                    while(moves.next())cache.add(Entry{Key{sqlite3_column_int64(moves.s,0),"category:mouse_move","mouse_move","distance",moves.text(1)},"鼠标移动","移动距离",moves.text(2),sqlite3_column_int64(moves.s,3)});
-                    if(viewFilter.mouseDetails){
-                        Query points(db->handle(),
-                            "SELECT s.identity,s.name,s.desktop_x,s.desktop_y,s.width,s.height,p.x,p.y,k.identity,SUM(p.press_count) "
-                            "FROM mouse_positions p JOIN mouse_screens s ON s.id=p.screen_id "
-                            "JOIN controls k ON k.id=p.control_id JOIN apps a ON a.id=p.app_id "
-                            "WHERE p.second_utc>=?1 AND p.second_utc<?2 AND (?3='' OR a.identity=?3) "
+                    Query combos(
+                        db->handle(),
+                        "SELECT "
+                        "c.second_utc,c.identity,c.name,a.identity,a.name,c."
+                        "press_count FROM keyboard_combinations c JOIN apps a "
+                        "ON a.id=c.app_id WHERE c.second_utc>=?1 AND "
+                        "c.second_utc<?2 AND (?3='' OR a.identity=?3)");
+                    sqlite3_bind_int64(combos.s, 1, viewFilter.start);
+                    sqlite3_bind_int64(combos.s, 2, viewFilter.end);
+                    combos.text(3, viewFilter.app);
+                    while (combos.next())
+                        cache.add(Entry{
+                            Key{sqlite3_column_int64(combos.s, 0),
+                                "category:keyboard_combo", "keyboard_combo",
+                                combos.text(1), combos.text(3)},
+                            "组合按键", combos.text(2), combos.text(4),
+                            sqlite3_column_int64(combos.s, 5)});
+                    Query moves(
+                        db->handle(),
+                        "SELECT "
+                        "m.minute_utc,a.identity,a.name,m.distance_nanometers "
+                        "FROM mouse_movement m JOIN apps a ON a.id=m.app_id "
+                        "WHERE m.minute_utc>=?1 AND m.minute_utc<?2");
+                    sqlite3_bind_int64(moves.s, 1, viewFilter.start);
+                    sqlite3_bind_int64(moves.s, 2, viewFilter.end);
+                    while (moves.next())
+                        cache.add(Entry{Key{sqlite3_column_int64(moves.s, 0),
+                                            "category:mouse_move", "mouse_move",
+                                            "distance", moves.text(1)},
+                                        "鼠标移动", "移动距离", moves.text(2),
+                                        sqlite3_column_int64(moves.s, 3)});
+                    if (viewFilter.mouseDetails) {
+                        Query points(
+                            db->handle(),
+                            "SELECT "
+                            "s.identity,s.name,s.desktop_x,s.desktop_y,s.width,"
+                            "s.height,p.x,p.y,k.identity,SUM(p.press_count) "
+                            "FROM mouse_positions p JOIN mouse_screens s ON "
+                            "s.id=p.screen_id "
+                            "JOIN controls k ON k.id=p.control_id JOIN apps a "
+                            "ON a.id=p.app_id "
+                            "WHERE p.second_utc>=?1 AND p.second_utc<?2 AND "
+                            "(?3='' OR a.identity=?3) "
                             "GROUP BY p.screen_id,p.x,p.y,k.identity");
-                        sqlite3_bind_int64(points.s,1,viewFilter.start);sqlite3_bind_int64(points.s,2,viewFilter.end);points.text(3,viewFilter.app);
-                        while(points.next()){
-                            MousePosition point{points.text(0),points.text(1),sqlite3_column_int(points.s,2),sqlite3_column_int(points.s,3),
-                                sqlite3_column_int(points.s,4),sqlite3_column_int(points.s,5),sqlite3_column_int(points.s,6),sqlite3_column_int(points.s,7)};
-                            cache.addMouse(point,points.text(8),sqlite3_column_int64(points.s,9));
+                        sqlite3_bind_int64(points.s, 1, viewFilter.start);
+                        sqlite3_bind_int64(points.s, 2, viewFilter.end);
+                        points.text(3, viewFilter.app);
+                        while (points.next()) {
+                            MousePosition point{
+                                points.text(0),
+                                points.text(1),
+                                sqlite3_column_int(points.s, 2),
+                                sqlite3_column_int(points.s, 3),
+                                sqlite3_column_int(points.s, 4),
+                                sqlite3_column_int(points.s, 5),
+                                sqlite3_column_int(points.s, 6),
+                                sqlite3_column_int(points.s, 7)};
+                            cache.addMouse(point, points.text(8),
+                                           sqlite3_column_int64(points.s, 9));
                         }
                     }
                     for (auto &[k, e] : pending)
@@ -634,8 +728,8 @@ void Engine::run() {
                     result->error = QString::fromUtf8(e.what());
                     emit viewReady(result);
                 }
-            } else if (!snapshot.empty() ||
-                       cache.filter.activityGrouping != viewFilter.activityGrouping) {
+            } else if (!snapshot.empty() || cache.filter.activityGrouping !=
+                                                viewFilter.activityGrouping) {
                 cache.filter.activityGrouping = viewFilter.activityGrouping;
                 for (auto &[k, e] : snapshot)
                     cache.add(e);

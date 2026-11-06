@@ -14,8 +14,8 @@ std::string categoryName(const std::string &type);
 using Count = std::int64_t;
 struct MousePosition {
     std::string screenIdentity, screenName;
-    int left=0, top=0, width=0, height=0, x=0, y=0;
-    auto operator<=>(const MousePosition&) const = default;
+    int left = 0, top = 0, width = 0, height = 0, x = 0, y = 0;
+    auto operator<=>(const MousePosition &) const = default;
 };
 struct Key {
     Count second{};

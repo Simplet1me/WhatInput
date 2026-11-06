@@ -1,5 +1,6 @@
 ﻿cmake_minimum_required(VERSION 3.24)
-project(WhatInput VERSION 0.2.0 LANGUAGES C CXX RC)
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" WHATINPUT_VERSION LIMIT_COUNT 1)
+project(WhatInput VERSION ${WHATINPUT_VERSION} LANGUAGES C CXX RC)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(NOT WIN32)
@@ -33,7 +34,7 @@ qt_add_executable(WhatInput WIN32
 )
 qt_add_resources(WhatInput application_icons PREFIX "/assets" BASE assets
   FILES assets/WhatInput.ico assets/ICON.png assets/chevron.svg assets/up.svg)
-target_compile_definitions(WhatInput PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_compile_definitions(WhatInput PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN WHATINPUT_VERSION="${PROJECT_VERSION}")
 target_link_libraries(WhatInput PRIVATE core Qt6::Widgets user32 advapi32 xinput9_1_0)
 install(TARGETS WhatInput RUNTIME DESTINATION .)
 install(FILES README.md THIRD_PARTY.md DESTINATION .)

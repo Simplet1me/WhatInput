@@ -3,12 +3,12 @@
 #include <QDateTime>
 #include <QObject>
 #include <QString>
+#include <array>
 #include <atomic>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <thread>
-#include <array>
 
 namespace wi {
 struct ViewFilter {
@@ -17,7 +17,7 @@ struct ViewFilter {
     std::string softwareType;
     std::string activityType, activityApp;
     int activityGrouping = 0;
-    bool mouseDetails=false;
+    bool mouseDetails = false;
 };
 struct RankedControl {
     std::string type, control, name;
@@ -25,7 +25,7 @@ struct RankedControl {
 };
 struct HourCount {
     Count start = 0, end = 0, count = 0;
-    std::array<Count,4> series{};
+    std::array<Count, 4> series{};
 };
 struct ActivePeriod {
     Count start = 0, end = 0, count = 0;
@@ -39,7 +39,7 @@ struct ViewResult {
     Count total = 0;
     Count todayMouse = 0, todayKeyboard = 0, todayGamepad = 0;
     Count rangeStart = 0, rangeEnd = 0, activityBucketSeconds = 3600;
-    int activityGrouping=0;
+    int activityGrouping = 0;
     std::vector<RankedControl> controls;
     std::vector<HourCount> hours;
     Count activityTotal = 0, activeMinutes = 0;
@@ -48,11 +48,16 @@ struct ViewResult {
     std::map<std::string, std::string> applications;
     QString error;
     QDateTime updated;
-    struct MousePoint {int x=0,y=0;Count count=0;int button=0;bool operator==(const MousePoint&)const=default;};
+    struct MousePoint {
+        int x = 0, y = 0;
+        Count count = 0;
+        int button = 0;
+        bool operator==(const MousePoint &) const = default;
+    };
     struct MouseScreen {
         MousePosition screen;
         std::vector<MousePoint> points;
-        Count total=0;
+        Count total = 0;
     };
     std::vector<MouseScreen> mouseScreens;
     std::vector<RankedApplication> movement;
@@ -76,7 +81,7 @@ class Engine : public QObject {
     void record(const std::string &type, const std::string &control,
                 const std::string &name, const std::string &app,
                 const std::string &appName, Count count,
-                std::optional<MousePosition> position=std::nullopt);
+                std::optional<MousePosition> position = std::nullopt);
     void inputError(const QString &message);
     void watch(ViewFilter filter, quint64 request);
     void unwatch();
@@ -89,8 +94,8 @@ class Engine : public QObject {
     void finish();
     void discardAndFinish();
     EngineStatus status() const;
-    int mouseDpi()const{return mouseDpi_.load();}
-    void setMouseDpi(int value){mouseDpi_=value;}
+    int mouseDpi() const { return mouseDpi_.load(); }
+    void setMouseDpi(int value) { mouseDpi_ = value; }
   signals:
     void viewReady(std::shared_ptr<const wi::ViewResult> result);
     void notice(QString message);
@@ -98,7 +103,7 @@ class Engine : public QObject {
 
   private:
     QString root_;
-    std::atomic<int> mouseDpi_=2000;
+    std::atomic<int> mouseDpi_ = 2000;
     mutable std::mutex mutex_;
     std::condition_variable wake_;
     Buffer active_, displayChanges_;

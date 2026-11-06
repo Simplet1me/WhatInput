@@ -1,6 +1,6 @@
 #pragma once
-#include "platform/application_labels.h"
 #include "engine/engine.h"
+#include "platform/application_labels.h"
 #include <QAbstractTableModel>
 #include <QHash>
 #include <QIcon>
@@ -37,7 +37,7 @@ class StatsWindow : public QMainWindow {
     void closeEvent(QCloseEvent *event) override;
     void showEvent(QShowEvent *event) override;
     void changeEvent(QEvent *event) override;
-    bool eventFilter(QObject* watched,QEvent* event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
   private:
     wi::Engine &engine_;
@@ -48,32 +48,32 @@ class StatsWindow : public QMainWindow {
     QTableWidget *software_;
     RankModel *model_;
     QStackedWidget *pages_;
-    QScrollArea* dashboardScroll_=nullptr;
+    QScrollArea *dashboardScroll_ = nullptr;
     QComboBox *appFilter_, *deviceFilter_, *softwareDeviceFilter_;
     QComboBox *activityAppFilter_;
-    QButtonGroup* period_;
+    QButtonGroup *period_;
     QComboBox *keyboardAppFilter_;
-    QComboBox* mouseHeatmapMode_;
-    QWidget* movementPanel_;
-    QTableWidget* movementTable_;
-    QLabel* movementTotal_;
-    bool movementMode_=false;
-    bool gamepadMode_=false;
-    QWidget* gamepadPanel_;
-    GamepadHeatmap* gamepadHeatmap_;
-    QComboBox* gamepadAppFilter_;
-    bool combinationMode_=false;
-    QWidget* combinationPanel_;
-    QComboBox* combinationAppFilter_;
-    QTableWidget* combinationTable_;
-    QCheckBox* preciseTime_;
+    QComboBox *mouseHeatmapMode_;
+    QWidget *movementPanel_;
+    QTableWidget *movementTable_;
+    QLabel *movementTotal_;
+    bool movementMode_ = false;
+    bool gamepadMode_ = false;
+    QWidget *gamepadPanel_;
+    GamepadHeatmap *gamepadHeatmap_;
+    QComboBox *gamepadAppFilter_;
+    bool combinationMode_ = false;
+    QWidget *combinationPanel_;
+    QComboBox *combinationAppFilter_;
+    QTableWidget *combinationTable_;
+    QCheckBox *preciseTime_;
     QDateTimeEdit *rangeStart_, *rangeEnd_;
     QWidget *timePanel_, *activityPanel_, *formula_, *dashboard_;
     QWidget *cardsPanel_, *keyboardPanel_;
     KeyboardHeatmap *keyboardHeatmap_;
-    MouseStatistics* mouseStatistics_;
+    MouseStatistics *mouseStatistics_;
     ActivityChart *chart_;
-    QComboBox* activityGrouping_;
+    QComboBox *activityGrouping_;
     QLabel *todayMouse_, *todayKeyboard_, *todayGamepad_, *todayTotal_;
     QTimer timer_;
     int nameRefreshTicks_ = 0;
@@ -84,10 +84,13 @@ class StatsWindow : public QMainWindow {
     bool exiting_ = false;
     bool historyMode_ = false;
     bool keyboardMode_ = false;
-    bool mouseMode_=false;
-    int currentPage_=0;
-    struct TimeSelection {int period=0;QDateTime start,end;};
-    std::map<int,TimeSelection> timeSelections_;
+    bool mouseMode_ = false;
+    int currentPage_ = 0;
+    struct TimeSelection {
+        int period = 0;
+        QDateTime start, end;
+    };
+    std::map<int, TimeSelection> timeSelections_;
     QDate queryDate_;
     wi::ViewFilter appliedFilter_;
     void selectPeriod();

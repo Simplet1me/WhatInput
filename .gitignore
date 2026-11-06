@@ -2,5 +2,6 @@
 /build/
 /dist/
 /release/
+/dev_release/
 *.log
 __pycache__/

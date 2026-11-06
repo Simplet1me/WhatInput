@@ -1,6 +1,6 @@
 #include "ui/keyboard/keyboard_heatmap.h"
-#include <QLocale>
 #include "ui/heat_scale.h"
+#include <QLocale>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QToolTip>
@@ -117,18 +117,18 @@ void KeyboardHeatmap::setStatistics(const wi::ViewResult &result) {
 QRectF KeyboardHeatmap::screenBounds(const Key &key) const {
     const double unit = std::min((width() - 24) / 23.2, (height() - 70) / 6.25);
     const double left = (width() - 23.2 * unit) / 2,
-                 top = 50 + std::max(0.0,(height() - 70 - 6.25 * unit) / 4);
+                 top = 50 + std::max(0.0, (height() - 70 - 6.25 * unit) / 4);
     return {left + key.bounds.x() * unit, top + key.bounds.y() * unit,
             key.bounds.width() * unit - 4, key.bounds.height() * unit - 4};
 }
 QColor KeyboardHeatmap::color(wi::Count count) const {
-    return heatColor(maximum_?double(count)/maximum_:0);
+    return heatColor(maximum_ ? double(count) / maximum_ : 0);
 }
 void KeyboardHeatmap::paintEvent(QPaintEvent *) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
     painter.fillRect(rect(), QColor("#17232e"));
-    paintHeatLegend(painter,width(),double(maximum_));
+    paintHeatLegend(painter, width(), double(maximum_));
     const double unit = std::min((width() - 24) / 23.2, (height() - 70) / 6.25);
     for (int i = 0; i < int(keys_.size()); ++i) {
         const auto &key = keys_[i];

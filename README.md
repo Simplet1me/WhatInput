@@ -4,7 +4,7 @@ Windows 10/11 x64 本地输入统计工具，使用 C++20、Qt 6 Widgets、Win32
 
 ## 使用
 
-启动工作区 `release/WhatInput.exe`，打开原生统计窗口并在托盘常驻。整个应用使用一个进程，内部线程负责输入采集、手柄轮询和存储。关闭统计窗口后继续记录，托盘“退出”才停止程序。
+启动工作区 `dev_release/WhatInput.exe`，打开原生统计窗口并在托盘常驻。整个应用使用一个进程，内部线程负责输入采集、手柄轮询和存储。关闭统计窗口后继续记录，托盘“退出”才停止程序。
 
 - 所有键盘合并、所有鼠标合并、所有 XInput 手柄合并，按设备类别区分键位。
 - 按秒聚合，支持软件、设备类型、今天、昨天、最近 7 天、全部及自定义秒级区间。
@@ -39,19 +39,16 @@ release/
 
 ## 构建与发布
 
-依赖：Qt **6.8.3 MSVC2022 x64 的 Widgets/Qt Base**、SQLite **3.50.4**、CMake ≥3.24、Ninja、兼容 MSVC 编译器及 Windows SDK。当前工作区使用 MSVC 19.51.36256、Windows SDK 10.0.26100.0。SQLite 源码已经固定在 `third_party/`。
+当前版本为 **0.1.0**，版本号统一保存在根目录 `VERSION`。依赖 Qt 6.8.3 MSVC2022 x64、CMake、Ninja、MSVC 和 Windows SDK；本机默认路径已写入构建脚本，也可用 `VCVARS`、`QT_ROOT` 环境变量指定。
 
-```powershell
-$env:VCVARS = '你的Visual Studio目录\VC\Auxiliary\Build\vcvars64.bat'
-$env:QT_ROOT = '你的Qt目录\6.8.3\msvc2022_64'
-cmd /c packaging\build.cmd
-```
+- 开发版：运行 `packaging/build-dev.cmd`，干净编译后更新 `dev_release/`，保留个人数据、配置、缓存、日志和导出。原 `packaging/build.cmd` 仅转发到开发版。
+- 发布版：仅由用户亲自运行 `packaging/build-release.cmd`，输入 `PUBLISH` 后重新编译，输出到 `release/0.1.0/`。助手不得直接或间接运行发布构建。
 
-本机可直接运行脚本，默认路径已配置。脚本仅构建 `WhatInput`，先部署到 `build/package`，再更新工作区 `release`。不运行测试，也不启动新程序进行验证。更新时会正常退出工作区内的旧程序，替换应用和依赖，清除旧统计 EXE 及 WebEngine 运行组件。
+两种模式使用独立的 `build/dev`、`build/release` 构建目录和 `build/package-dev`、`build/package-release` 暂存目录。发布版仅包含程序、必要 Qt 插件、随包 MSVC 运行库及第三方声明，不复制开发数据或外置素材，也不包含调试符号、测试文件、翻译、网络及 TLS 插件。已有同版本发布目录会阻止构建，需用户自行处理或修改版本。
 
-本版存储版本为 **4**。根据本次用户明确要求，升级 v3 数据库时保留键盘和手柄记录，只在首次启动时通过事务删除旧鼠标计数并创建鼠标位置表，不删除整个数据库。再次启动不会重复清除数据；`release/.whatinput-schema-version` 记录发布版本。此次数据保留要求优先于工作区通常的整库重建规则。
+脚本不执行测试，不启动程序验证。开发版部署仅正常退出 `dev_release/WhatInput.exe` 后替换程序。数据库结构或格式有变时，按 AGENTS.md 的规则另行处理。
 
-请分发完整 `release` 目录。原生界面无需 HTML、JavaScript、WebChannel、QtWebEngineProcess 或 WebEngine 资源。首次在缺少 MSVC 运行库的机器使用时，安装配套 `vc_redist.x64.exe`。
+请分发完整的 `release/<版本号>/` 目录，收件人无需安装 Qt。程序首次运行时在自身目录创建数据和配置。
 
 ## 边界与验证状态
 

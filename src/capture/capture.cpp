@@ -252,28 +252,49 @@ static std::pair<std::string, std::string> application(bool mouse) {
     return a;
 }
 
-static std::optional<wi::MousePosition> mousePosition(){
-    POINT point{};if(!GetPhysicalCursorPos(&point))return std::nullopt;
-    const auto monitor=MonitorFromPoint(point,MONITOR_DEFAULTTONULL);if(!monitor)return std::nullopt;
-    MONITORINFOEXW info{};info.cbSize=sizeof(info);
-    if(!GetMonitorInfoW(monitor,&info))return std::nullopt;
-    static std::map<std::wstring,std::string> screenIdentities;
-    static ULONGLONG refreshed=0;
-    const auto now=GetTickCount64();if(now-refreshed>5000){screenIdentities.clear();refreshed=now;}
-    const std::wstring display=info.szDevice;
-    auto found=screenIdentities.find(display);
-    if(found==screenIdentities.end()){
-        DISPLAY_DEVICEW device{};device.cb=sizeof(device);
-        const auto id=EnumDisplayDevicesW(info.szDevice,0,&device,EDD_GET_DEVICE_INTERFACE_NAME)&&device.DeviceID[0]?
-            utf8(device.DeviceID):utf8(display);
-        found=screenIdentities.emplace(display,id).first;
+static std::optional<wi::MousePosition> mousePosition() {
+    POINT point{};
+    if (!GetPhysicalCursorPos(&point))
+        return std::nullopt;
+    const auto monitor = MonitorFromPoint(point, MONITOR_DEFAULTTONULL);
+    if (!monitor)
+        return std::nullopt;
+    MONITORINFOEXW info{};
+    info.cbSize = sizeof(info);
+    if (!GetMonitorInfoW(monitor, &info))
+        return std::nullopt;
+    static std::map<std::wstring, std::string> screenIdentities;
+    static ULONGLONG refreshed = 0;
+    const auto now = GetTickCount64();
+    if (now - refreshed > 5000) {
+        screenIdentities.clear();
+        refreshed = now;
+    }
+    const std::wstring display = info.szDevice;
+    auto found = screenIdentities.find(display);
+    if (found == screenIdentities.end()) {
+        DISPLAY_DEVICEW device{};
+        device.cb = sizeof(device);
+        const auto id = EnumDisplayDevicesW(info.szDevice, 0, &device,
+                                            EDD_GET_DEVICE_INTERFACE_NAME) &&
+                                device.DeviceID[0]
+                            ? utf8(device.DeviceID)
+                            : utf8(display);
+        found = screenIdentities.emplace(display, id).first;
     }
     wi::MousePosition position;
-    position.screenIdentity=found->second;position.screenName=utf8(display);
-    position.left=info.rcMonitor.left;position.top=info.rcMonitor.top;
-    position.width=info.rcMonitor.right-info.rcMonitor.left;position.height=info.rcMonitor.bottom-info.rcMonitor.top;
-    position.x=point.x-position.left;position.y=point.y-position.top;
-    if(position.width<=0||position.height<=0||position.x<0||position.y<0||position.x>=position.width||position.y>=position.height)return std::nullopt;
+    position.screenIdentity = found->second;
+    position.screenName = utf8(display);
+    position.left = info.rcMonitor.left;
+    position.top = info.rcMonitor.top;
+    position.width = info.rcMonitor.right - info.rcMonitor.left;
+    position.height = info.rcMonitor.bottom - info.rcMonitor.top;
+    position.x = point.x - position.left;
+    position.y = point.y - position.top;
+    if (position.width <= 0 || position.height <= 0 || position.x < 0 ||
+        position.y < 0 || position.x >= position.width ||
+        position.y >= position.height)
+        return std::nullopt;
     return position;
 }
 static void add(const std::string &, const std::string &type,
@@ -281,9 +302,10 @@ static void add(const std::string &, const std::string &type,
                 const std::string &name, int count, bool mouse) {
     if (count <= 0 || sleeping || stopping)
         return;
-    const auto position=mouse?mousePosition():std::nullopt;
+    const auto position = mouse ? mousePosition() : std::nullopt;
     const auto app = application(mouse);
-    service->record(type, control, name, app.first, app.second, count,position);
+    service->record(type, control, name, app.first, app.second, count,
+                    position);
     if (type == "keyboard")
         acceptedKeyboard += count;
     else if (type == "mouse")
@@ -297,24 +319,36 @@ struct Device {
     std::set<std::string> modifiers;
 };
 static std::map<HANDLE, Device> devices;
-static std::string modifierName(unsigned scan,unsigned flags){
-    if(scan==0x1d&&!(flags&RI_KEY_E1))return "Ctrl";
-    if((scan==0x2a||scan==0x36)&&flags==0)return "Shift";
-    if(scan==0x38&&!(flags&RI_KEY_E1))return "Alt";
-    if((scan==0x5b||scan==0x5c)&&(flags&RI_KEY_E0))return "Win";
+static std::string modifierName(unsigned scan, unsigned flags) {
+    if (scan == 0x1d && !(flags & RI_KEY_E1))
+        return "Ctrl";
+    if ((scan == 0x2a || scan == 0x36) && flags == 0)
+        return "Shift";
+    if (scan == 0x38 && !(flags & RI_KEY_E1))
+        return "Alt";
+    if ((scan == 0x5b || scan == 0x5c) && (flags & RI_KEY_E0))
+        return "Win";
     return {};
 }
-static void combination(const std::string& code,const std::string& name){
+static void combination(const std::string &code, const std::string &name) {
     std::set<std::string> held;
-    for(const auto& [handle,d]:devices)for(const auto& modifier:d.modifiers){
-        unsigned scan=0,flags=0;sscanf_s(modifier.c_str(),"kbd:%X:%u",&scan,&flags);
-        const auto label=modifierName(scan,flags);if(!label.empty())held.insert(label);
-    }
+    for (const auto &[handle, d] : devices)
+        for (const auto &modifier : d.modifiers) {
+            unsigned scan = 0, flags = 0;
+            sscanf_s(modifier.c_str(), "kbd:%X:%u", &scan, &flags);
+            const auto label = modifierName(scan, flags);
+            if (!label.empty())
+                held.insert(label);
+        }
     std::string prefix;
-    for(const auto label:{"Ctrl","Alt","Shift","Win"})if(held.contains(label))prefix+=std::string(label)+"+";
-    if(prefix.empty()||sleeping||stopping)return;
-    const auto app=application(false);
-    service->record("keyboard_combo","combo:"+prefix+code,prefix+name,app.first,app.second,1);
+    for (const auto label : {"Ctrl", "Alt", "Shift", "Win"})
+        if (held.contains(label))
+            prefix += std::string(label) + "+";
+    if (prefix.empty() || sleeping || stopping)
+        return;
+    const auto app = application(false);
+    service->record("keyboard_combo", "combo:" + prefix + code, prefix + name,
+                    app.first, app.second, 1);
 }
 // All physical mice share one rolling 1000 ms wheel-count interval.
 // Keep the first accepted direction; suppressed deltas are never queued.
@@ -331,11 +365,17 @@ static Device &device(HANDLE handle, bool mouse) {
                  Device{wi::categoryId(type), wi::categoryName(type), type, {}})
         .first->second;
 }
-static void recordMovement(const RAWMOUSE& mouse){
-    if(sleeping||(mouse.usFlags&MOUSE_MOVE_ABSOLUTE))return;
-    const double dx=mouse.lLastX,dy=mouse.lLastY;
-    const auto distance=wi::Count(std::llround(std::hypot(dx,dy)*25400000.0/service->mouseDpi()));
-    if(distance>0){const auto app=application(true);service->record("mouse_move","distance","移动距离",app.first,app.second,distance);}
+static void recordMovement(const RAWMOUSE &mouse) {
+    if (sleeping || (mouse.usFlags & MOUSE_MOVE_ABSOLUTE))
+        return;
+    const double dx = mouse.lLastX, dy = mouse.lLastY;
+    const auto distance = wi::Count(
+        std::llround(std::hypot(dx, dy) * 25400000.0 / service->mouseDpi()));
+    if (distance > 0) {
+        const auto app = application(true);
+        service->record("mouse_move", "distance", "移动距离", app.first,
+                        app.second, distance);
+    }
 }
 static void rawInput(HRAWINPUT h) {
     UINT n = 0;
@@ -381,9 +421,13 @@ static void rawInput(HRAWINPUT h) {
         snprintf(code, sizeof(code), "kbd:%04X:%u", scan,
                  k.Flags & (RI_KEY_E0 | RI_KEY_E1));
         bool pressed = !(k.Flags & RI_KEY_BREAK);
-        const auto modifier=modifierName(scan,k.Flags&(RI_KEY_E0|RI_KEY_E1));
-        if(!modifier.empty()){
-            if(pressed&&!sleeping)d.modifiers.insert(code);else d.modifiers.erase(code);
+        const auto modifier =
+            modifierName(scan, k.Flags & (RI_KEY_E0 | RI_KEY_E1));
+        if (!modifier.empty()) {
+            if (pressed && !sleeping)
+                d.modifiers.insert(code);
+            else
+                d.modifiers.erase(code);
         }
         if (d.state.edge(code, pressed)) {
             wchar_t label[128]{};
@@ -397,7 +441,8 @@ static void rawInput(HRAWINPUT h) {
             if (name.empty())
                 name = code;
             add(d.id, d.type, d.name, code, name, 1, false);
-            if(modifier.empty())combination(code,name);
+            if (modifier.empty())
+                combination(code, name);
         }
         if (k.VKey == VK_PAUSE)
             d.state.edge(code, false);
@@ -502,19 +547,28 @@ static void gamepads() {
                     add(id, "gamepad", name, "pad:RT", "RT", 1, false);
                 lt[i] = l;
                 rt[i] = r;
-                if(now>=stickSample[i]){
-                    const auto sample=[&](SHORT x,SHORT y,const char* code,const char* label){
-                        const double nx=double(x)/(x<0?32768:32767),ny=double(y)/(y<0?32768:32767);
-                        if(std::hypot(nx,ny)<=0.1)return;
-                        const int direction=wi::stickDirection(nx,ny);
-                        add(id,"gamepad",name,std::string(code)+":"+std::to_string(direction),std::string(label)+" · "+wi::stickDirectionName(direction),1,false);
+                if (now >= stickSample[i]) {
+                    const auto sample = [&](SHORT x, SHORT y, const char *code,
+                                            const char *label) {
+                        const double nx = double(x) / (x < 0 ? 32768 : 32767),
+                                     ny = double(y) / (y < 0 ? 32768 : 32767);
+                        if (std::hypot(nx, ny) <= 0.1)
+                            return;
+                        const int direction = wi::stickDirection(nx, ny);
+                        add(id, "gamepad", name,
+                            std::string(code) + ":" + std::to_string(direction),
+                            std::string(label) + " · " +
+                                wi::stickDirectionName(direction),
+                            1, false);
                     };
-                    sample(s.Gamepad.sThumbLX,s.Gamepad.sThumbLY,"pad:LS_MOVE","左摇杆移动");
-                    sample(s.Gamepad.sThumbRX,s.Gamepad.sThumbRY,"pad:RS_MOVE","右摇杆移动");
-                    stickSample[i]=now+500;
+                    sample(s.Gamepad.sThumbLX, s.Gamepad.sThumbLY,
+                           "pad:LS_MOVE", "左摇杆移动");
+                    sample(s.Gamepad.sThumbRX, s.Gamepad.sThumbRY,
+                           "pad:RS_MOVE", "右摇杆移动");
+                    stickSample[i] = now + 500;
                 }
             } else {
-                stickSample[i]=now+500;
+                stickSample[i] = now + 500;
                 lt[i] = s.Gamepad.bLeftTrigger > 96;
                 rt[i] = s.Gamepad.bRightTrigger > 96;
             }
@@ -648,7 +702,8 @@ static LRESULT CALLBACK procedure(HWND h, UINT m, WPARAM w, LPARAM l) {
             devices.erase(reinterpret_cast<HANDLE>(l));
         break;
     case WM_POWERBROADCAST:
-        for(auto& [handle,d]:devices)d.modifiers.clear();
+        for (auto &[handle, d] : devices)
+            d.modifiers.clear();
         if (w == PBT_APMSUSPEND) {
             sleeping = true;
             service->flush();

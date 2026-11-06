@@ -20,9 +20,7 @@
 #include <functional>
 
 namespace {
-QIcon applicationIcon() {
-    return QIcon(":/assets/WhatInput.ico");
-}
+QIcon applicationIcon() { return QIcon(":/assets/WhatInput.ico"); }
 } // namespace
 int main(int argc, char **argv) {
     wchar_t executable[32768]{};
@@ -34,7 +32,7 @@ int main(int argc, char **argv) {
     qputenv("TMP", QDir::toNativeSeparators(root + "/temp").toLocal8Bit());
     QApplication app(argc, argv);
     app.setApplicationName("WhatInput");
-    app.setApplicationVersion("0.2.0");
+    app.setApplicationVersion(WHATINPUT_VERSION);
     app.setQuitOnLastWindowClosed(false);
     app.setWindowIcon(applicationIcon());
     if (app.arguments().contains("--exit")) {
