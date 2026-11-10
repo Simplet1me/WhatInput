@@ -44,6 +44,7 @@ class StatsWindow : public QMainWindow {
     QString root_;
     ApplicationLabels applicationLabels_;
     QLabel *status_, *message_, *pageTitle_;
+    QLabel *keyRankTotal_, *softwareRankTotal_, *combinationRankTotal_, *movementRankTotal_;
     QTableView *table_;
     QTableWidget *software_;
     RankModel *model_;

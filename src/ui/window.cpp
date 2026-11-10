@@ -63,6 +63,15 @@ QLabel *heading(const QString &text, QWidget *parent = nullptr) {
     l->setObjectName("sectionTitle");
     return l;
 }
+QLabel *rankTotal(QVBoxLayout *layout, QWidget *parent, const QString &unit = "次") {
+    auto label = new QLabel("合计：0 " + unit, parent);
+    label->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    auto font = label->font();
+    font.setBold(true);
+    label->setFont(font);
+    layout->addWidget(label);
+    return label;
+}
 } // namespace
 class ShareDelegate : public QStyledItemDelegate {
   public:
@@ -360,6 +369,13 @@ StatsWindow::StatsWindow(wi::Engine &engine, QString root, QWidget *parent)
         table_->horizontalHeader()->setSectionResizeMode(
             i, QHeaderView::ResizeToContents);
     keyLayout->addWidget(table_, 1);
+    keyRankTotal_ = rankTotal(keyLayout, keys);
+    connect(model_, &QAbstractItemModel::modelReset, this, [this] {
+        wi::Count total = 0;
+        for (int row = 0; row < model_->rowCount(); ++row)
+            total += model_->rows[row].count;
+        keyRankTotal_->setText("合计：" + number(total) + " 次");
+    });
     auto apps = new QFrame(home);
     apps->setMinimumHeight(320);
     apps->setObjectName("panel");
@@ -392,6 +408,7 @@ StatsWindow::StatsWindow(wi::Engine &engine, QString root, QWidget *parent)
     software_->setSelectionBehavior(QAbstractItemView::SelectRows);
     software_->setShowGrid(false);
     appLayout->addWidget(software_, 1);
+    softwareRankTotal_ = rankTotal(appLayout, apps);
     for (auto cardLayout : {keyLayout, appLayout}) {
         auto more = new QPushButton("查看全部", home);
         more->setObjectName("viewAll");
@@ -477,6 +494,7 @@ StatsWindow::StatsWindow(wi::Engine &engine, QString root, QWidget *parent)
     movementTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     movementTable_->setShowGrid(false);
     movementLayout->addWidget(movementTable_, 1);
+    movementRankTotal_ = rankTotal(movementLayout, movementPanel_, "m");
     movementPanel_->hide();
     homeLayout->addWidget(movementPanel_, 1);
     gamepadPanel_ = new QFrame(home);
@@ -529,6 +547,7 @@ StatsWindow::StatsWindow(wi::Engine &engine, QString root, QWidget *parent)
     combinationTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     combinationTable_->setShowGrid(false);
     comboLayout->addWidget(combinationTable_, 1);
+    combinationRankTotal_ = rankTotal(comboLayout, combinationPanel_);
     homeLayout->addWidget(combinationPanel_, 1);
     combinationPanel_->hide();
     connect(combinationAppFilter_, &QComboBox::currentIndexChanged, this,
@@ -984,6 +1003,7 @@ void StatsWindow::receive(std::shared_ptr<const wi::ViewResult> result) {
         if (result->combinations.empty())
             combinationTable_->setItem(
                 0, 0, new QTableWidgetItem("这个时段没有组合按键"));
+        combinationRankTotal_->setText("合计：" + number(total) + " 次");
         updateStatus();
         return;
     }
@@ -994,6 +1014,8 @@ void StatsWindow::receive(std::shared_ptr<const wi::ViewResult> result) {
         movementTotal_->setText(
             "总移动距离：" +
             QLocale().toString(double(total) / 1000000000, 'f', 2) + " m");
+        movementRankTotal_->setText(
+            "合计：" + QLocale().toString(double(total) / 1000000000, 'f', 2) + " m");
         movementTable_->setRowCount(std::max(1, int(result->movement.size())));
         movementTable_->clearContents();
         int index = 0;
@@ -1047,10 +1069,13 @@ void StatsWindow::receive(std::shared_ptr<const wi::ViewResult> result) {
     software_->setRowCount(historyMode_
                                ? int(result->software.size())
                                : std::min(10, int(result->software.size())));
+    software_->clearContents();
+    wi::Count softwareTotal = 0;
     int i = 0;
     for (auto &entry : result->software) {
         if (!historyMode_ && i >= 10)
             break;
+        softwareTotal += entry.count;
         auto id = QString::fromStdString(entry.id);
         const auto label =
             applicationLabels_.label(id, QString::fromStdString(entry.name));
@@ -1069,6 +1094,7 @@ void StatsWindow::receive(std::shared_ptr<const wi::ViewResult> result) {
         software_->setItem(0, 0, new QTableWidgetItem("当前设备暂无输入记录"));
     }
     software_->verticalScrollBar()->setValue(softwareScroll);
+    softwareRankTotal_->setText("合计：" + number(softwareTotal) + " 次");
     if (message_->text().startsWith("数据读取失败"))
         message_->hide();
     if (historyMode_) {
