@@ -1,10 +1,13 @@
 // clang-format off
 #include <windows.h>
+#include <objbase.h>
 // clang-format on
 #include "capture/capture.h"
 #include "ui/window.h"
+#include "platform/autostart.h"
 #include <QApplication>
 #include <QDir>
+#include <QDateTime>
 #include <QFile>
 #include <QFileInfo>
 #include <QIcon>
@@ -20,11 +23,25 @@
 #include <functional>
 
 namespace {
+struct MainComApartment {
+    HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    ~MainComApartment() { if (SUCCEEDED(hr)) CoUninitialize(); }
+};
 QIcon applicationIcon() { return QIcon(":/assets/WhatInput.ico"); }
 } // namespace
 int main(int argc, char **argv) {
     wchar_t executable[32768]{};
     GetModuleFileNameW(nullptr, executable, 32768);
+    QString privilegeError;
+    if (!wi::administratorSession(&privilegeError)) {
+        MessageBoxW(nullptr, privilegeError.toStdWString().c_str(), L"WhatInput", MB_OK | MB_ICONERROR);
+        return 1;
+    }
+    MainComApartment apartment;
+    if ((FAILED(apartment.hr) && apartment.hr != RPC_E_CHANGED_MODE) || !wi::initializeTaskSecurity(&privilegeError)) {
+        if (privilegeError.isEmpty()) privilegeError = "无法初始化 Windows COM 线程。";
+        MessageBoxW(nullptr, privilegeError.toStdWString().c_str(), L"WhatInput", MB_OK | MB_ICONERROR); return 1;
+    }
     const auto root =
         QFileInfo(QString::fromWCharArray(executable)).absolutePath();
     QDir().mkpath(root + "/temp");
@@ -35,13 +52,34 @@ int main(int argc, char **argv) {
     app.setApplicationVersion(WHATINPUT_VERSION);
     app.setQuitOnLastWindowClosed(false);
     app.setWindowIcon(applicationIcon());
+    if (app.arguments().contains("--enable-autostart") || app.arguments().contains("--disable-autostart")) {
+        QString error;
+        if (wi::setAutoStartEnabled(app.arguments().contains("--enable-autostart"), &error)) return 0;
+        QDir().mkpath(root + "/logs"); QFile file(root + "/logs/autostart-setup.log");
+        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) file.write(error.toUtf8());
+        return 1;
+    }
+    const bool hiddenStartup = app.arguments().contains("--startup-hidden") || app.arguments().contains("--background");
+    const bool loginStartup = app.arguments().contains("--autostart");
+    QDir().mkpath(root + "/logs");
+    QFile startupLog(root + "/logs/startup.log");
+    if (startupLog.size() > 1024 * 1024) {
+        QFile::remove(root + "/logs/startup.previous.log");
+        startupLog.rename(root + "/logs/startup.previous.log");
+        startupLog.setFileName(root + "/logs/startup.log");
+    }
+    if (startupLog.open(QIODevice::Append | QIODevice::Text)) {
+        startupLog.write((QDateTime::currentDateTime().toString(Qt::ISODate) +
+            (loginStartup ? " login startup" : " manual startup") + " elevated=true user=" + wi::currentUserSid() + "\n").toUtf8());
+        startupLog.close();
+    }
     if (app.arguments().contains("--exit")) {
         if (auto h = FindWindowW(L"WhatInputCollector", nullptr))
             PostMessageW(h, WM_CLOSE, 0, 0);
         return 0;
     }
-    HANDLE singleton =
-        CreateMutexW(nullptr, FALSE, L"Local\\WhatInput.Collector.v1");
+    const auto mutexName = ("Local\\WhatInput.Collector.v2." + wi::currentUserSid()).toStdWString();
+    HANDLE singleton = CreateMutexW(nullptr, FALSE, mutexName.c_str());
     if (!singleton) {
         QMessageBox::critical(nullptr, "WhatInput", "无法建立单实例锁。");
         return 1;
@@ -52,7 +90,7 @@ int main(int argc, char **argv) {
                 DWORD pid;
                 GetWindowThreadProcessId(h, &pid);
                 AllowSetForegroundWindow(pid);
-                if (!app.arguments().contains("--background"))
+                if (!hiddenStartup)
                     PostMessageW(h, WM_APP + 2, 0, 0);
                 break;
             }
@@ -84,6 +122,8 @@ int main(int argc, char **argv) {
             QJsonParseError error;
             const auto json =
                 QJsonDocument::fromJson(settings.readAll(), &error);
+            // Release the read handle before QSaveFile later replaces this file on Windows.
+            settings.close();
             const auto value = json.object().value("saveIntervalSeconds");
             if (error.error == QJsonParseError::NoError && value.isDouble() &&
                 value.toInt() >= 1 && value.toInt() <= 3600)
@@ -164,7 +204,7 @@ int main(int argc, char **argv) {
         &app, &QGuiApplication::commitDataRequest, &app,
         [&](QSessionManager &) { engine.flush(); }, Qt::DirectConnection);
     tray.show();
-    if (!app.arguments().contains("--background") ||
+    if (!hiddenStartup ||
         !QSystemTrayIcon::isSystemTrayAvailable())
         window.open();
     if (!settingError.isEmpty())

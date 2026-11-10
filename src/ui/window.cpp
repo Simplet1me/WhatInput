@@ -36,6 +36,7 @@
 #include <QSpinBox>
 #include <QStackedWidget>
 #include <QStyle>
+#include <QStyleOptionButton>
 #include <QStyledItemDelegate>
 #include <QTableView>
 #include <QTableWidget>
@@ -48,6 +49,29 @@
 #include <functional>
 
 namespace {
+class StartupCheckBox : public QCheckBox {
+  public:
+    using QCheckBox::QCheckBox;
+  protected:
+    void paintEvent(QPaintEvent *event) override {
+        QCheckBox::paintEvent(event);
+        if (checkState() != Qt::Checked) return;
+        QStyleOptionButton option;
+        initStyleOption(&option);
+        const QRectF indicator = style()->subElementRect(QStyle::SE_CheckBoxIndicator, &option, this);
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor("#a9edc8"));
+        painter.drawRoundedRect(indicator.adjusted(0.5, 0.5, -0.5, -0.5), 3, 3);
+        painter.setPen(QPen(QColor("#10251c"), 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        const auto point = [&indicator](double x, double y) {
+            return QPointF(indicator.left() + indicator.width() * x, indicator.top() + indicator.height() * y);
+        };
+        painter.drawLine(point(0.24, 0.51), point(0.43, 0.70));
+        painter.drawLine(point(0.43, 0.70), point(0.77, 0.30));
+    }
+};
 QString number(wi::Count n) {
     return QLocale(QLocale::Chinese).toString(qlonglong(n));
 }
@@ -1223,9 +1247,24 @@ void StatsWindow::settings() {
     seconds->setSuffix(" 秒");
     seconds->setValue(engine_.status().interval);
     form->addRow("自动保存间隔", seconds);
-    auto startup = new QCheckBox("开机自启", &dialog);
-    const bool startupEnabled = wi::autoStartEnabled();
-    startup->setChecked(startupEnabled);
+    auto startup = new StartupCheckBox("开机自启", &dialog);
+    auto startupStatus = wi::autoStartStatus();
+    bool startupTouched = false;
+    const auto showStartupStatus = [&] {
+        QSignalBlocker blocker(startup);
+        startup->setTristate(startupStatus.state == wi::AutostartState::Unknown);
+        startup->setCheckState(startupStatus.state == wi::AutostartState::Unknown ? Qt::PartiallyChecked :
+            startupStatus.state == wi::AutostartState::Disabled ? Qt::Unchecked : Qt::Checked);
+        startup->setText(startupStatus.state == wi::AutostartState::Unknown ? "开机自启（状态未知）" :
+            startupStatus.state == wi::AutostartState::NeedsRepair ? "开机自启（需要修复）" : "开机自启");
+        startup->setToolTip(startupStatus.detail);
+    };
+    showStartupStatus();
+    connect(startup, &QCheckBox::clicked, &dialog, [&] {
+        startupTouched = true;
+        startup->setTristate(false);
+        startup->setText("开机自启");
+    });
     form->addRow(startup);
     layout->addLayout(form);
     auto clearButton = new QPushButton("清空历史", &dialog);
@@ -1244,30 +1283,38 @@ void StatsWindow::settings() {
     buttons->button(QDialogButtonBox::Save)->setText("保存");
     buttons->button(QDialogButtonBox::Cancel)->setText("取消");
     layout->addWidget(buttons);
-    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    if (dialog.exec() != QDialog::Accepted)
-        return;
-    QDir().mkpath(root_ + "/config");
-    QSaveFile file(root_ + "/config/settings.json");
-    if (!file.open(QIODevice::WriteOnly)) {
-        QMessageBox::warning(this, "设置保存失败", file.errorString());
-        return;
-    }
-    auto data =
-        QJsonDocument(QJsonObject{{"saveIntervalSeconds", seconds->value()}})
-            .toJson();
-    if (file.write(data) != data.size() || !file.commit()) {
-        QMessageBox::warning(this, "设置保存失败", file.errorString());
-        return;
-    }
-    engine_.setInterval(seconds->value());
-    if (startup->isChecked() != startupEnabled &&
-        !wi::setAutoStartEnabled(startup->isChecked()))
-        QMessageBox::warning(
-            this, "开机自启设置失败",
-            "自动保存间隔已保存，但无法更新当前用户的开机自启设置。");
-    updateStatus();
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, [&] {
+        QDir().mkpath(root_ + "/config");
+        QSaveFile file(root_ + "/config/settings.json");
+        if (!file.open(QIODevice::WriteOnly)) {
+            QMessageBox::warning(&dialog, "设置保存失败", file.errorString()); return;
+        }
+        const auto data = QJsonDocument(QJsonObject{{"saveIntervalSeconds", seconds->value()}}).toJson();
+        if (file.write(data) != data.size()) {
+            QMessageBox::warning(&dialog, "设置保存失败", file.errorString()); return;
+        }
+        const bool unknownUntouched = startupStatus.state == wi::AutostartState::Unknown && !startupTouched;
+        if (!unknownUntouched) {
+            const auto actual = wi::autoStartStatus();
+            const bool enabled = startup->isChecked();
+            // Even a disabled task must be removed when saving an unchecked switch.
+            const bool change = !enabled || actual.state != wi::AutostartState::Enabled;
+            if (change) {
+                QString error;
+                if (!wi::setAutoStartEnabled(enabled, &error)) {
+                    startupStatus = wi::autoStartStatus(); showStartupStatus(); startupTouched = false;
+                    QMessageBox::warning(&dialog, "开机自启设置失败", error); return;
+                }
+            }
+            startupStatus = wi::autoStartStatus(); showStartupStatus(); startupTouched = false;
+        }
+        if (!file.commit()) {
+            QMessageBox::warning(&dialog, "设置保存失败", "自启状态已按界面更新，但自动保存间隔写入失败：" + file.errorString()); return;
+        }
+        engine_.setInterval(seconds->value()); updateStatus(); dialog.accept();
+    });
+    dialog.exec();
 }
 void StatsWindow::open() {
     if (exiting_)

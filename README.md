@@ -14,7 +14,7 @@ Windows 10/11 x64 本地输入统计工具，使用 C++20、Qt 6 Widgets、Win32
 - 界面和托盘提供“立即保存”；正常退出先停止采集，再保存剩余数据。
 - CSV 导出包含选定范围内的数据库记录及未保存增量，写入 `exports/`。
 - 清空历史需要二次确认，同时清空历史和清空操作之前尚未保存的计数。
-- 开机自启使用当前用户权限，以 `--background` 模式启动，仅显示托盘图标。
+- EXE 内嵌管理员权限清单，无需修改兼容性属性；按 Windows 策略授权后运行。设置中的开机自启使用当前管理员账户的高权限登录任务，后台启动并保留托盘，详见 [登录自启说明](docs/autostart.md)。
 
 界面底部显示待保存次数、最近落盘时间和存储错误。自动保存不会使界面计数再次增加。保存失败时保留内存批次重试；退出保存失败时可以重试，或明确选择丢弃未保存数据退出。
 
@@ -39,10 +39,10 @@ release/
 
 ## 构建与发布
 
-当前版本为 **0.1.0**，版本号统一读取根目录 `release.md` 首行标题，该文档仅保存当前版本内容，完整历史保存在 `Logs.md`。依赖 Qt 6.8.3 MSVC2022 x64、CMake、Ninja、MSVC 和 Windows SDK；本机默认路径已写入构建脚本，也可用 `VCVARS`、`QT_ROOT` 环境变量指定。
+当前版本为 **0.2.0**，版本号统一读取根目录 `release.md` 首行标题，该文档仅保存当前版本内容，完整历史保存在 `Logs.md`。依赖 Qt 6.8.3 MSVC2022 x64、CMake、Ninja、MSVC 和 Windows SDK；本机默认路径已写入构建脚本，也可用 `VCVARS`、`QT_ROOT` 环境变量指定。
 
 - 开发版：运行 `packaging/build-dev.cmd`，干净编译后更新 `dev_release/`，保留个人数据、配置、缓存、日志和导出。原 `packaging/build.cmd` 仅转发到开发版。
-- 发布版：仅由用户亲自运行 `packaging/build-release.cmd`，输入 `PUBLISH` 后重新编译，输出到 `release/0.1.0/`。助手不得直接或间接运行发布构建。
+- 发布版：仅由用户亲自运行 `packaging/build-release.cmd`，输入 `PUBLISH` 后重新编译，输出到 `release/0.2.0/`。助手不得直接或间接运行发布构建。
 
 两种模式使用独立的 `build/dev`、`build/release` 构建目录和 `build/package-dev`、`build/package-release` 暂存目录。发布版仅包含程序、必要 Qt 插件、随包 MSVC 运行库及第三方声明，不复制开发数据或外置素材，也不包含调试符号、测试文件、翻译、网络及 TLS 插件。已有同版本发布目录会阻止构建，需用户自行处理或修改版本。
 

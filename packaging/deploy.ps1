@@ -48,4 +48,15 @@ if($Mode -eq 'dev'){
     New-Item -ItemType Directory -Path $destination | Out-Null
 }
 foreach($item in Get-ChildItem -LiteralPath $stage -Force){Copy-Item -LiteralPath $item.FullName -Destination $destination -Recurse -Force}
+if($Mode -eq 'dev'){
+    # The new EXE carries requireAdministrator; the old per-user compatibility flag is redundant.
+    $layers='HKCU:\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers'
+    $key=Get-Item -LiteralPath $layers -ErrorAction SilentlyContinue
+    $appPath=Join-Path $destination 'WhatInput.exe'
+    if($key -and $key.GetValueNames() -contains $appPath){
+        $flags=([string]$key.GetValue($appPath) -split '\s+' | Where-Object {$_ -and $_ -ine 'RUNASADMIN'}) -join ' '
+        if($flags.Trim(' ','~')){Set-ItemProperty -LiteralPath $layers -Name $appPath -Value $flags}
+        else{Remove-ItemProperty -LiteralPath $layers -Name $appPath}
+    }
+}
 Write-Output "Deployed $Mode $version to $destination"

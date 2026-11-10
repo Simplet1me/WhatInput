@@ -40,7 +40,10 @@ qt_add_executable(WhatInput WIN32
 qt_add_resources(WhatInput application_icons PREFIX "/assets" BASE assets
   FILES assets/WhatInput.ico assets/ICON.png assets/chevron.svg assets/up.svg)
 target_compile_definitions(WhatInput PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN WHATINPUT_VERSION="${PROJECT_VERSION}")
-target_link_libraries(WhatInput PRIVATE core Qt6::Widgets user32 advapi32 xinput9_1_0)
+target_link_libraries(WhatInput PRIVATE core Qt6::Widgets user32 advapi32 xinput9_1_0 ole32 oleaut32 taskschd comsuppw wtsapi32)
+if(MSVC)
+  target_link_options(WhatInput PRIVATE "/MANIFESTUAC:level='requireAdministrator' uiAccess='false'")
+endif()
 install(TARGETS WhatInput RUNTIME DESTINATION .)
 install(FILES README.md THIRD_PARTY.md DESTINATION .)
 install(DIRECTORY assets/ DESTINATION assets FILES_MATCHING PATTERN "*.png" PATTERN "*.ico")
